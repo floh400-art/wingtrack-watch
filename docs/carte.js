@@ -16,11 +16,16 @@ function openCarte() {
     const lp = CM.map.createPane ? CM.map.createPane('cmLabels') : null;
     if (lp) { lp.style.zIndex = 450; lp.style.pointerEvents = 'none'; }
     cmBase();
-    CM.layer = L.layerGroup().addTo(CM.map);
-    CM.staLayer = L.layerGroup().addTo(CM.map);
     CM.field = new WindField(CM.map);
-    // toucher la carte ailleurs que sur un spot : créer un spot ici / prévisions
-    CM.map.on('click', e => cmEmptyTap(e.latlng.lat, e.latlng.lng));
+    CM.sc = new SpotCanvas(CM.map); CM.layer = true;
+    watchMoves(CM.map);
+    // toucher un spot / une balise, sinon : créer un spot ici / prévisions
+    CM.map.on('click', e => {
+      const h = CM.sc.hit(e.containerPoint);
+      if (!h) return cmEmptyTap(e.latlng.lat, e.latlng.lng);
+      if (h.type === 'sta') stationPopup(CM.map, h.st, x => { show('meteo'); setSpot({ name: x.name, lat: x.lat, lon: x.lon }); });
+      else cmTap(h);
+    });
     CM.map.on('moveend', () => { clearTimeout(CM.t); CM.t = setTimeout(cmDraw, 300); });
     const sp = M.spot || cfg.meteoSpot || favs()[0];
     CM.map.setView(sp ? [sp.lat, sp.lon] : [46.6, 2.4], sp ? 9 : 6);
@@ -46,16 +51,43 @@ function cmBase() {
   $('cmBaseBtn').textContent = { dark: '🌑', light: '🗺️', street: '🏘️', sat: '🛰️' }[cfg.cmBase || 'light'];
 }
 function cmDraw() {
-  if (!CM.map || !CM.layer) return;
-  drawStations(CM.map, CM.staLayer, s => stationPopup(CM.map, s, x => { show('meteo'); setSpot({ name: x.name, lat: x.lat, lon: x.lon }); }));
-  drawDbSpots(CM.map, CM.layer, cmTap, cmTime(), {
-    minZoom: 7, cap: 160, onlyOk: CM.onlyOk, timeFn: cmTime,
-    onCount: (n, tot, nb) => {
-      $('cmCount').innerHTML = CM.map.getZoom() < 7
-        ? 'Zoome pour voir tous les spots de glisse (tes spots restent affichés)'
-        : `<b style="color:#16a34a">${n.ok} bons</b>${n.off ? ` (dont ${n.off} ⚠ vent de terre)` : ''} · <b style="color:#f59e0b">${n.mid} moyens</b> · ${n.no} sans vent · ${tot - (nb || 0)} spots${nb ? ` + ${nb} plages` : CM.map.getZoom() < 10 ? ' · zoome pour voir aussi les plages' : ''}`;
-    },
+  if (!CM.map || !CM.sc) return;
+  if (CM.map._wtMoving) return; // redessiné à la fin du déplacement
+  const map = CM.map, t = cmTime(), z = map.getZoom(), items = [];
+  const list = visibleSpots(map, 7, 160), shown = { ok: 0, mid: 0, no: 0, off: 0 };
+  list.forEach(s => {
+    const c = condAt(s, t), r = rateCond(c), side = c ? sideOf(c.d, shoreOf(s)) : null;
+    if (r) shown[r]++; if (r === 'ok' && side === 'off') shown.off++;
+    if (CM.onlyOk && r !== 'ok' && !s.fav) return;
+    items.push({ ...s, type: 'spot', r, side, layer: s.fav ? 'fav' : r || 'un' });
   });
+  const sta = cfg.showStations !== false && z >= 6 && STA.list ? STA.list : [];
+  if (sta.length) {
+    const b = map.getBounds(), S = b.getSouth(), N = b.getNorth(), W = b.getWest(), E = b.getEast();
+    let n = 0;
+    for (const x of sta) { if (x.lat < S || x.lat > N || x.lon < W || x.lon > E) continue; if (++n > 250) break; items.push({ type: 'sta', layer: 'sta', lat: x.lat, lon: x.lon, w: x.w, d: x.d, name: x.name, st: x }); }
+    if (map.attributionControl && !map._staAttr) { map.attributionControl.addAttribution(STA_ATTR); map._staAttr = true; }
+  }
+  CM.sc.set(items);
+  const nb = list.filter(x => x.beach).length;
+  $('cmCount').innerHTML = z < 7
+    ? 'Zoome pour voir tous les spots de glisse (tes spots restent affichés)'
+    : `<b style="color:#16a34a">${shown.ok} bons</b>${shown.off ? ` (dont ${shown.off} ⚠ vent de terre)` : ''} · <b style="color:#f59e0b">${shown.mid} moyens</b> · ${shown.no} sans vent · ${list.length - nb} spots${nb ? ` + ${nb} plages` : z < 10 ? ' · zoome pour voir aussi les plages' : ''}`;
+  // données manquantes : chargées en arrière-plan (une à la fois), puis un seul redessin
+  clearTimeout(CM.lt); CM.lt = setTimeout(() => cmLoad(list), 400);
+}
+async function cmLoad(list) {
+  if (CM.loadBusy) { CM.loadAgain = true; return; }
+  CM.loadBusy = true;
+  let changed = false;
+  try {
+    if (cfg.showStations !== false && CM.map.getZoom() >= 6 && (!STA.list || Date.now() - STA.at > 3 * 60e3)) changed = !!(await loadStations().catch(() => null)) || changed;
+    changed = (await fetchCond(list)) || changed;
+    changed = (await loadBeaches(CM.map)) || changed;
+    if (typeof ensureShoreArea === 'function') changed = (await ensureShoreArea(CM.map, list)) || changed;
+  } catch (e) {} finally { CM.loadBusy = false; }
+  if (changed) cmDraw();
+  if (CM.loadAgain) { CM.loadAgain = false; cmLoad(visibleSpots(CM.map, 7, 160)); }
 }
 function cmTap(s) {
   const c = condAt(s, cmTime()), sh = shoreOf(s), side = c ? sideOf(c.d, sh) : null, r = rateCond(c);

@@ -215,6 +215,7 @@ function scheduleRedraw(map, layer, onTap, tStr, opts) {
 }
 function drawDbSpots(map, layer, onTap, tStr, opts = {}) {
   if (!map || !layer) return;
+  if (!map.getContainer().offsetParent) return; // carte cachée (autre onglet) : rien à dessiner
   watchMoves(map);
   if (map._wtMoving) return; // on redessinera à la fin du déplacement
   const cache = layer._wt || (layer._wt = new Map()), seen = new Set();

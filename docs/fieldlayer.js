@@ -10,8 +10,9 @@ class WindField {
     this.heat = document.createElement('canvas'); this.part = document.createElement('canvas');
     this.heat.className = this.part.className = 'wmcv';
     pane.appendChild(this.heat); pane.appendChild(this.part);
+    map.on('zoomstart', () => { this.heat.style.visibility = 'hidden'; });
     map.on('movestart', () => { this.moving = true; const c = this.part.getContext('2d'); c.clearRect(0, 0, this.part.width, this.part.height); });
-    map.on('moveend', () => { this.moving = false; if (!this.on) return; this.place(); this.drawHeat(); this.resetParts(); clearTimeout(this.lt); this.lt = setTimeout(() => this.load(), 600); });
+    map.on('moveend', () => { this.moving = false; this.heat.style.visibility = ''; if (!this.on) return; this.place(); this.drawHeat(); this.resetParts(); clearTimeout(this.lt); this.lt = setTimeout(() => this.load(), 600); });
   }
   setOn(b) {
     this.on = b;
@@ -107,7 +108,6 @@ class WindField {
     c.imageSmoothingEnabled = true; c.drawImage(off, 0, 0, W, H);
     const z = this.map.getZoom();
     cv.style.opacity = Math.max(0.3, Math.min(0.7, 0.7 - (z - 6) * 0.06));
-    cv.style.mixBlendMode = (cfg.cmBase || 'light') === 'light' || cfg.cmBase === 'street' ? 'multiply' : 'normal';
   }
   resetParts() {
     const W = this.part.width, H = this.part.height;
