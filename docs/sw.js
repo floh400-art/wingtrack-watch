@@ -1,4 +1,4 @@
-const V = 'wingtrack-v1';
+const V = 'wingtrack-v2';
 const SHELL = ['./', 'index.html', 'app.js', 'stats.js', 'manifest.webmanifest', 'icon-192.png',
   'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css',
   'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js'];
@@ -12,8 +12,11 @@ self.addEventListener('fetch', e => {
     e.respondWith(fetch(e.request).then(r => { const cl = r.clone(); caches.open('tiles').then(c => c.put(e.request, cl)); return r; }).catch(() => caches.match(e.request)));
     return;
   }
-  e.respondWith(caches.match(e.request).then(r => r || fetch(e.request).then(res => {
-    if (res.ok && new URL(u).origin === location.origin) { const cl = res.clone(); caches.open(V).then(c => c.put(e.request, cl)); }
-    return res;
-  })));
+  if (new URL(u).origin === location.origin) {
+    // fichiers de l'appli : réseau d'abord (mises à jour immédiates), cache si pas de réseau
+    e.respondWith(fetch(e.request).then(res => { if (res.ok) { const cl = res.clone(); caches.open(V).then(c => c.put(e.request, cl)); } return res; })
+      .catch(() => caches.match(e.request)));
+    return;
+  }
+  e.respondWith(caches.match(e.request).then(r => r || fetch(e.request)));
 });
