@@ -1,4 +1,4 @@
-const V = 'wingtrack-v25';
+const V = 'wingtrack-v26';
 const SHELL = ['./', 'index.html', 'app.js', 'stats.js', 'manifest.webmanifest', 'icon-192.png', 'meteo.js', 'carnet.js', 'wmap.js', 'replay.js', 'spots.js', 'shore.js', 'fieldlayer.js', 'spotcanvas.js', 'stations.js', 'carte.js', 'osmworker.js',
   'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css',
   'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js'];

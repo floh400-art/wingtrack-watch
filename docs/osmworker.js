@@ -22,7 +22,7 @@ function parseSpots(els) {
     const lat = e.lat ?? (e.center && e.center.lat), lon = e.lon ?? (e.center && e.center.lon);
     if (lat == null || lon == null) return;
     const t = e.tags || {}, sp = (t.sport || '').toLowerCase(), nm = (t.name || '').toLowerCase();
-    if (t.highway || t.route || t.railway) return;
+    if (t.highway || t.route || t.railway || t.shop || t.office || t.craft) return; // pas de magasins / bureaux : seulement les spots
     const k = [];
     if (/kite/.test(sp) || /yes|designated/.test(t.kitesurfing || t.kiteboarding || '') || /kite/.test(nm)) k.push('kite');
     if (/windsurf/.test(sp) || /yes|designated/.test(t.windsurfing || '') || /windsurf/.test(nm)) k.push('windsurf');

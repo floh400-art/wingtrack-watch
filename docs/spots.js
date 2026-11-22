@@ -5,7 +5,7 @@
    ========================================================================= */
 const SDB = { list: null, loading: null, at: 0 };
 const KIND = { kite: { i: '🪁', l: 'Kite' }, windsurf: { i: '🏄', l: 'Windsurf' }, wing: { i: '🪽', l: 'Wing' }, surf: { i: '🌊', l: 'Surf' }, beach: { i: '🏖️', l: 'Plage' } };
-try { localStorage.removeItem('wt_spotdb'); localStorage.removeItem('wt_spotdb3'); } catch (e) {} // anciennes listes
+try { localStorage.removeItem('wt_spotdb'); localStorage.removeItem('wt_spotdb3'); localStorage.removeItem('wt_spotdb5'); } catch (e) {} // anciennes listes
 
 /* ---------- plages (spots possibles), chargées par zone quand on zoome ---------- */
 const BEACH = { cells: new Map(), loading: new Set() };
@@ -45,7 +45,6 @@ const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.k
 const BB = '(34,-12,71,35)';
 const OV_QUERIES = [
   `[out:json][timeout:90];(nwr["sport"~"kite|windsurf|wing",i]${BB};nwr["kitesurfing"~"yes|designated"]${BB};nwr["windsurfing"~"yes|designated"]${BB};nwr["kiteboarding"~"yes|designated"]${BB};);out center tags;`,
-  `[out:json][timeout:90];(nwr["leisure"~"sports_centre|beach_resort|marina|sports_hall"]["name"~"kite|windsurf|wing ?foil",i]${BB};nwr["shop"~"sports|water_sports|surf|outdoor"]["name"~"kite|windsurf|wing ?foil",i]${BB};nwr["club"]["name"~"kite|windsurf|wing ?foil",i]${BB};nwr["natural"="beach"]["name"~"kite|windsurf",i]${BB};nwr["amenity"~"school|training"]["name"~"kite|windsurf|wing ?foil",i]${BB};);out center tags;`,
 ];
 // processus en arrière-plan (évite les gels de l'écran)
 const OSMW = { w: null, n: 0, cb: new Map() };
@@ -64,14 +63,14 @@ async function loadSpotDB(force) {
   if (SDB.loading) return SDB.loading;
   if (!force) {
     try {
-      const c = JSON.parse(localStorage.getItem('wt_spotdb4') || 'null');
+      const c = JSON.parse(localStorage.getItem('wt_spotdb5') || 'null');
       if (c && c.list && Date.now() - c.at < 30 * 86400e3) { SDB.list = c.list; SDB.at = c.at; return SDB.list; }
     } catch (e) {}
   }
   SDB.loading = (async () => {
     const list = await osmJob({ type: 'spotdb', qs: OV_QUERIES });
     SDB.list = list; SDB.at = Date.now();
-    setTimeout(() => { try { localStorage.setItem('wt_spotdb4', JSON.stringify({ at: SDB.at, list })); } catch (e) {} }, 500);
+    setTimeout(() => { try { localStorage.setItem('wt_spotdb5', JSON.stringify({ at: SDB.at, list })); } catch (e) {} }, 500);
     return list;
   })();
   try { return await SDB.loading; } finally { SDB.loading = null; }
