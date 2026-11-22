@@ -5,7 +5,7 @@
    ========================================================================= */
 const SDB = { list: null, loading: null, at: 0 };
 const KIND = { kite: { i: '🪁', l: 'Kite' }, windsurf: { i: '🏄', l: 'Windsurf' }, wing: { i: '🪽', l: 'Wing' }, surf: { i: '🌊', l: 'Surf' }, beach: { i: '🏖️', l: 'Plage' } };
-try { localStorage.removeItem('wt_spotdb'); localStorage.removeItem('wt_spotdb3'); localStorage.removeItem('wt_spotdb5'); } catch (e) {} // anciennes listes
+try { localStorage.removeItem('wt_spotdb'); localStorage.removeItem('wt_spotdb3'); localStorage.removeItem('wt_spotdb4'); } catch (e) {} // anciennes listes
 
 /* ---------- plages (spots possibles), chargées par zone quand on zoome ---------- */
 const BEACH = { cells: new Map(), loading: new Set() };
