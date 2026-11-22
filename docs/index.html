@@ -156,6 +156,25 @@ table.legs tr.sel td{background:rgba(34,211,197,.15)}
 #dCarnet .chip2{padding:6px 10px}
 textarea{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--txt);font:inherit;resize:vertical}
 .stars{display:flex;gap:6px}.stars button{background:none;font-size:26px;color:#2a4a5e;padding:0}.stars button.on{color:#ffd166}
+#wmap.view{padding:0;position:relative;height:calc(100vh - 62px - env(safe-area-inset-bottom));min-height:0;overflow:hidden}
+#wmap.view:not(.on){display:none}
+#wmMap{position:absolute;inset:0;width:100%;height:100%;background:#0a1b27}
+.wmcv{position:absolute;left:0;top:0;pointer-events:none}
+.wmtop{position:absolute;top:calc(10px + env(safe-area-inset-top));left:10px;right:10px;display:flex;gap:8px;z-index:800}
+.wmbtn{width:44px;height:44px;border-radius:22px;background:rgba(6,20,31,.75);color:#fff;font-size:26px;font-weight:700;line-height:1}
+.wmsel{flex:1;height:44px;border-radius:22px;border:0;background:rgba(6,20,31,.75);color:#fff;font:inherit;font-weight:700;padding:0 14px}
+.wmside{position:absolute;top:calc(62px + env(safe-area-inset-top));left:10px;right:10px;z-index:800;display:flex;gap:6px}
+.wmside button,.wmmodels button{background:rgba(6,20,31,.75);color:#cfe3ee;border-radius:14px;padding:8px 10px;font-size:12px;font-weight:700}
+.wmside button.on,.wmmodels button.on{background:var(--acc);color:#04211e}
+.wmmodels{position:absolute;top:calc(104px + env(safe-area-inset-top));left:10px;right:10px;z-index:800;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+.wmmodels button{white-space:nowrap}
+.wmclock{position:absolute;left:50%;bottom:118px;transform:translateX(-50%);background:rgba(6,20,31,.85);color:#fff;font-size:24px;font-weight:800;padding:6px 18px;border-radius:20px;z-index:800;font-variant-numeric:tabular-nums}
+.wmbottom{position:absolute;left:0;right:0;bottom:0;z-index:800;background:linear-gradient(transparent,rgba(6,20,31,.92) 25%);padding:18px 12px 8px}
+.wmplay{width:46px;height:46px;border-radius:23px;background:#fff;color:#06141f;font-size:18px;font-weight:900;margin-right:10px}
+.wmline{font-size:13px;gap:8px;color:#cfe3ee}.wmline b{color:#fff;font-size:15px}
+#wmTime{width:100%;accent-color:var(--acc)}
+.wmlegend{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-weight:800;font-size:14px;text-shadow:0 1px 2px #000}
+.wmlegend b{color:#fff;font-size:12px}
 </style>
 </head>
 <body>
@@ -256,9 +275,31 @@ textarea{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line)
   <div id="progBody"></div>
 </section>
 
+<!-- CARTE VENT PLEIN ÉCRAN -->
+<section id="wmap" class="view">
+  <div id="wmMap"></div>
+  <div class="wmtop">
+    <button class="wmbtn" id="wmClose">‹</button>
+    <select id="wmSpot" class="wmsel"></select>
+  </div>
+  <div class="wmside" id="wmLayers"></div>
+  <div class="wmmodels" id="wmModels"></div>
+  <div class="wmclock" id="wmClock">--:--</div>
+  <div class="wmbottom">
+    <div class="row">
+      <button class="wmplay" id="wmPlay">▶</button>
+      <div class="grow">
+        <div class="row wmline"><b id="wmDay"></b><span id="wmInfo" class="grow"></span><span id="wmStatus"></span></div>
+        <input type="range" id="wmTime" min="0" max="167" value="0">
+      </div>
+    </div>
+    <div id="wmLegend" class="wmlegend"></div>
+  </div>
+</section>
+
 <!-- MÉTÉO -->
 <section id="meteo" class="view">
-  <div class="row"><h1 class="grow">Météo</h1><button class="btn small" id="mxUnit" title="Changer d'unité">km/h</button><button class="btn small" id="mxRefresh">↻</button></div>
+  <div class="row"><h1 class="grow">Météo</h1><button class="btn small" id="mxBig2">🌬️ Carte</button><button class="btn small" id="mxUnit" title="Changer d'unité">km/h</button><button class="btn small" id="mxRefresh">↻</button></div>
   <p class="sub" id="mxStatus"></p>
   <h2 style="margin-top:6px">Mes spots</h2>
   <div class="spotgrid" id="mxSpotList"></div>
@@ -268,6 +309,7 @@ textarea{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line)
   <div class="seg scroll" id="mxModels"></div>
   <div id="mxBody"></div>
   <h2>Carte</h2>
+  <button class="btn pri" id="mxBig" style="width:100%;margin-bottom:10px">🌬️ Carte vent animée plein écran</button>
   <div class="seg" id="mxLayer" style="margin-bottom:8px"></div>
   <div id="mxMap"></div>
   <div id="mxTimeBox" class="timebox"><input type="range" id="mxTime" min="0" max="167" value="0"><div class="cap tip" id="mxTimeLbl"></div></div>
@@ -329,5 +371,6 @@ textarea{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line)
 <script src="app.js"></script>
 <script src="meteo.js"></script>
 <script src="carnet.js"></script>
+<script src="wmap.js"></script>
 </body>
 </html>

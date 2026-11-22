@@ -656,6 +656,7 @@ function drawField() {
 }
 $('mxTime').oninput = drawField;
 $('mxRefresh').onclick = () => renderMeteo(true);
+$('mxBig').onclick = $('mxBig2').onclick = () => openWindMap();
 // changement d'unité rapide : km/h → nœuds → m/s → mph
 const UORDER = ['kmh', 'kn', 'ms', 'mph'];
 function paintUnitBtn() { $('mxUnit').textContent = curU().l; }

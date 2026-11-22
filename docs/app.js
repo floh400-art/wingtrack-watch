@@ -76,6 +76,7 @@ function show(v) {
   window.scrollTo(0, 0);
   if (v === 'home') renderHome();
   if (v === 'meteo' && typeof renderMeteo === 'function') renderMeteo();
+  if (v !== 'wmap' && typeof stopAnim === 'function') { stopAnim(); stopPlay(); }
 }
 document.querySelectorAll('#nav button').forEach(b => b.onclick = () => show(b.dataset.v));
 
