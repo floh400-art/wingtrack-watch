@@ -76,6 +76,8 @@ function show(v) {
   window.scrollTo(0, 0);
   if (v === 'home') renderHome();
   if (v === 'meteo' && typeof renderMeteo === 'function') renderMeteo();
+  if (v === 'carte' && typeof openCarte === 'function') openCarte();
+  if (v !== 'carte' && typeof cmStop === 'function') cmStop();
   if (v !== 'wmap' && typeof stopAnim === 'function') { stopAnim(); stopPlay(); }
   if (v !== 'detail' && typeof rpStop === 'function') rpStop();
 }

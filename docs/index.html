@@ -234,6 +234,20 @@ table.fc td.shcell{padding:4px 2px}table.fc td.shcell small{font-weight:800;font
 .sside{margin-top:6px}
 .slot .shico{display:inline-block;vertical-align:middle;margin:0 2px 0 4px}
 .slot{flex-wrap:wrap}.slot .pill{white-space:nowrap}.slot b{white-space:nowrap}
+#carte.view{padding:0;position:relative;height:calc(100vh - 62px - env(safe-area-inset-bottom));min-height:0;overflow:hidden}
+#carte.view:not(.on){display:none}
+#cmMap{position:absolute;inset:0;width:100%;height:100%;background:#0a1b27}
+#cmMap .leaflet-bottom{bottom:120px}
+#cmMap .leaflet-control-attribution{font-size:9px}
+.cmtop{position:absolute;top:calc(10px + env(safe-area-inset-top));left:10px;right:10px;z-index:800;display:flex;gap:8px;align-items:flex-start}
+.cmtitle{flex:1;background:rgba(6,20,31,.85);border-radius:16px;padding:8px 12px;font-size:12px;color:#cfe3ee;line-height:1.4}
+.cmtitle > b{display:block;font-size:16px;color:#fff}
+.cmbtns{display:flex;flex-direction:column;gap:6px}
+.cmbottom{position:absolute;left:0;right:0;bottom:0;z-index:800;background:linear-gradient(transparent,rgba(6,20,31,.94) 22%);padding:18px 12px 10px}
+.cmbottom .condleg{color:#cfe3ee}
+.cmonly{background:rgba(255,255,255,.12);color:#fff;border-radius:14px;padding:6px 10px;font-size:12px;font-weight:700}
+.cmonly.on{background:#16a34a}
+#cmTime{width:100%;accent-color:#16a34a}
 </style>
 </head>
 <body>
@@ -339,6 +353,21 @@ table.fc td.shcell{padding:4px 2px}table.fc td.shcell small{font-weight:800;font
   </div>
 </section>
 
+<!-- CARTE DES SPOTS -->
+<section id="carte" class="view">
+  <div id="cmMap"></div>
+  <div class="cmtop">
+    <div class="cmtitle"><b>Spots</b><span id="cmCount">Chargement des spots…</span></div>
+    <div class="cmbtns"><button class="wmbtn" id="cmSearch" title="Chercher">🔍</button><button class="wmbtn" id="cmHere" title="Ma position">📍</button><button class="wmbtn" id="cmBaseBtn" title="Fond de carte">🗺️</button></div>
+  </div>
+  <div class="cmbottom">
+    <div class="row"><button class="wmplay" id="cmPlay">▶</button>
+      <div class="grow"><div class="row wmline"><b id="cmClock">Maintenant</b><span class="grow"></span><button class="cmonly" id="cmOnly">Navigables seulement</button></div>
+      <input type="range" id="cmTime" min="0" max="167" value="0"></div></div>
+    <div class="condleg"><span><i style="background:#16a34a"></i>Bon</span><span><i style="background:#f59e0b"></i>Moyen</span><span><i style="background:#111"></i>Rien</span><span><i style="background:#16a34a;box-shadow:0 0 0 2px #ef4444"></i>⚠ vent de terre</span><span><i style="background:#16a34a;box-shadow:0 0 0 2px #f59e0b"></i>side-off</span></div>
+  </div>
+</section>
+
 <!-- PROGRESSION -->
 <section id="progress" class="view">
   <button class="back" id="bProgBack">‹ Accueil</button>
@@ -438,6 +467,7 @@ table.fc td.shcell{padding:4px 2px}table.fc td.shcell small{font-weight:800;font
 
 <nav class="nav" id="nav">
   <button data-v="home" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/></svg>Sessions</button>
+  <button data-v="carte"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14"/></svg>Carte</button>
   <button data-v="meteo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8h11a3 3 0 10-3-3M3 12h15a3 3 0 11-3 3M3 16h8"/></svg>Météo</button>
   <button data-v="import"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v3h16v-3"/></svg>Importer</button>
   <button data-v="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>Réglages</button>
@@ -455,5 +485,6 @@ table.fc td.shcell{padding:4px 2px}table.fc td.shcell small{font-weight:800;font
 <script src="replay.js"></script>
 <script src="spots.js"></script>
 <script src="shore.js"></script>
+<script src="carte.js"></script>
 </body>
 </html>

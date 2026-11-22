@@ -162,27 +162,33 @@ function condHtml(r, s, side) {
 }
 
 /* ---------- tous les spots sur les cartes ---------- */
-function visibleSpots(map) {
+function visibleSpots(map, minZoom = 8, cap = 150) {
   const b = map.getBounds(), S = b.getSouth(), N = b.getNorth(), W = b.getWest(), E = b.getEast();
   const inB = s => s.lat >= S && s.lat <= N && s.lon >= W && s.lon <= E;
   const out = [];
   favs().forEach(s => inB(s) && out.push({ name: s.name, lat: s.lat, lon: s.lon, fav: true, icon: '★' }));
   (M.sessionSpots || []).forEach(s => { if (inB(s) && !out.some(o => sameSpot(o, s))) out.push({ name: s.name, lat: s.lat, lon: s.lon, icon: '🏄' }); });
-  if (map.getZoom() >= 8 && SDB.list) {
-    for (const s of SDB.list) {
-      if (!inB(s) || out.some(o => Math.abs(o.lat - s.lat) < 0.003 && Math.abs(o.lon - s.lon) < 0.003)) continue;
+  if (map.getZoom() >= minZoom && SDB.list) {
+    // les plus proches du centre de la carte d'abord
+    const c = map.getCenter ? map.getCenter() : { lat: (S + N) / 2, lng: (W + E) / 2 };
+    const cand = SDB.list.filter(inB).map(s => ({ s, d: (s.lat - c.lat) ** 2 + ((s.lon - c.lng) * Math.cos(c.lat * Math.PI / 180)) ** 2 })).sort((a, b) => a.d - b.d);
+    for (const { s } of cand) {
+      if (out.length >= cap) break;
+      if (out.some(o => Math.abs(o.lat - s.lat) < 0.003 && Math.abs(o.lon - s.lon) < 0.003)) continue;
       out.push({ name: spotLabel(s), lat: s.lat, lon: s.lon, icon: spotIcon(s) });
-      if (out.length >= 150) break;
     }
   }
   return out;
 }
-function drawDbSpots(map, layer, onTap, tStr) {
+function drawDbSpots(map, layer, onTap, tStr, opts = {}) {
   if (!map || !layer) return;
   layer.clearLayers();
-  const list = visibleSpots(map);
+  const list = visibleSpots(map, opts.minZoom ?? 8, opts.cap ?? 150);
+  let shown = { ok: 0, mid: 0, no: 0, off: 0 };
   list.forEach(s => {
     const c = condAt(s, tStr), r = rateCond(c), side = c ? sideOf(c.d, shoreOf(s)) : null;
+    if (r) shown[r]++; if (r === 'ok' && side === 'off') shown.off++;
+    if (opts.onlyOk && r !== 'ok' && !s.fav) return;
     const sz = r === 'ok' ? 30 : 18;
     const icon = L.divIcon({ className: '', html: condHtml(r, s, side), iconSize: [sz, sz], iconAnchor: [sz / 2, sz / 2] });
     const tip = `${esc(s.name)}${c && c.w != null ? ` · ${wf(c.w)} (raf. ${wf(c.g)}) ${wUnit()} ${dirName(c.d)}` : ''}${side ? ` · ${SIDES[side].l}${side === 'off' ? ' ⚠ ' + SIDES[side].d : ''}` : ''}`;
@@ -190,9 +196,10 @@ function drawDbSpots(map, layer, onTap, tStr) {
       .bindTooltip(tip, s.fav ? { permanent: true, direction: 'right', offset: [10, 0], className: 'stip' } : { direction: 'top', offset: [0, -10] })
       .on('click', ev => { L.DomEvent.stopPropagation(ev); onTap(s); });
   });
+  if (opts.onCount) opts.onCount(shown, list.length);
   // charge les conditions et l'orientation des plages manquantes puis redessine
-  fetchCond(list).then(changed => { if (changed) drawDbSpots(map, layer, onTap, tStr); });
-  if (typeof ensureShoreArea === 'function') ensureShoreArea(map, list).then(changed => { if (changed) drawDbSpots(map, layer, onTap, tStr); });
+  fetchCond(list).then(changed => { if (changed) drawDbSpots(map, layer, onTap, tStr, opts); });
+  if (typeof ensureShoreArea === 'function') ensureShoreArea(map, list).then(changed => { if (changed) drawDbSpots(map, layer, onTap, tStr, opts); });
 }
 const mxTimeStr = () => (M.field !== 'off' && typeof fieldTime === 'function' && fieldTime()) || null;
 const wmTimeStr = () => (WM.grid ? WM.grid.T[WM.t] : null);
