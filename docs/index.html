@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#06141f">
+<title>WingTrack</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{--bg:#06141f;--card:#0d2231;--line:#183a50;--txt:#e8f3f8;--mut:#86a6b8;--acc:#22d3c5;--acc2:#ffb84d;--red:#ff5d6c}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,Roboto,sans-serif}
+body{padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+.view{display:none;min-height:100%;padding:16px 16px 96px}
+.view.on{display:block}
+h1{font-size:26px;margin:4px 0 2px;letter-spacing:-.5px}
+h1 b{color:var(--acc)}
+h2{font-size:15px;color:var(--mut);text-transform:uppercase;letter-spacing:1px;margin:22px 0 10px;font-weight:600}
+.sub{color:var(--mut);font-size:14px;margin:0 0 14px}
+button{font:inherit;color:inherit;border:0;cursor:pointer}
+.btn{background:var(--card);border:1px solid var(--line);padding:12px 16px;border-radius:14px;font-weight:600}
+.btn.pri{background:var(--acc);color:#04211e;border:0}
+.btn.red{background:var(--red);color:#fff;border:0}
+.btn.ghost{background:transparent}
+.row{display:flex;gap:10px;align-items:center}
+.row>.grow{flex:1}
+.big-start{width:100%;padding:20px;font-size:20px;border-radius:18px;margin-top:6px}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.grid.g3{grid-template-columns:repeat(3,1fr)}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px}
+.tile .l{font-size:12px;color:var(--mut)}
+.tile .v{font-size:22px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
+.tile .v small{font-size:13px;color:var(--mut);font-weight:500;margin-left:3px}
+.tile.hl .v{color:var(--acc)}
+.list .item{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
+.item .t{font-weight:600}
+.item .m{color:var(--mut);font-size:13px;margin-top:3px}
+.item .s{text-align:right;font-weight:700;color:var(--acc);font-size:18px}
+.item .s small{display:block;color:var(--mut);font-weight:500;font-size:11px}
+.empty{color:var(--mut);text-align:center;padding:30px 10px;border:1px dashed var(--line);border-radius:14px}
+#map,#dmap{height:260px;border-radius:16px;overflow:hidden;border:1px solid var(--line);background:#0a1b27}
+#live{padding:0}
+#live .top{padding:12px 16px 0}
+.speed{text-align:center;padding:4px 0 8px}
+.speed .v{font-size:120px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-4px}
+.speed .u{color:var(--mut);font-size:16px}
+.speed.foil .v{color:var(--acc)}
+.gps{font-size:12px;color:var(--mut);display:flex;justify-content:space-between}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--red);margin-right:6px}
+.dot.ok{background:var(--acc)}.dot.mid{background:var(--acc2)}
+#live .grid{padding:0 16px}
+#live #map{margin:12px 16px;height:200px}
+.live-ctl{position:fixed;left:0;right:0;bottom:0;padding:12px 16px calc(12px + env(safe-area-inset-bottom));background:linear-gradient(transparent,var(--bg) 30%);display:flex;gap:10px}
+.live-ctl .btn{flex:1;padding:18px;font-size:18px}
+canvas#chart{width:100%;height:170px;display:block;background:var(--card);border:1px solid var(--line);border-radius:14px}
+.seg{display:flex;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:3px}
+.seg button{flex:1;padding:9px;border-radius:9px;background:transparent;color:var(--mut);font-weight:600}
+.seg button.on{background:var(--acc);color:#04211e}
+.field{margin:14px 0}
+.field label{display:block;color:var(--mut);font-size:13px;margin-bottom:6px}
+input[type=text],input[type=number]{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--txt);font:inherit}
+.back{background:none;color:var(--acc);font-weight:600;padding:6px 0;margin-bottom:6px}
+.note{font-size:13px;color:var(--mut);line-height:1.5;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px}
+.toast{position:fixed;left:50%;bottom:110px;transform:translateX(-50%);background:#123247;padding:10px 16px;border-radius:12px;font-size:14px;opacity:0;transition:.3s;pointer-events:none;z-index:2000;max-width:90%}
+.toast.on{opacity:1}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-end;z-index:3000}
+.modal.on{display:flex}
+.modal .box{background:var(--bg);border-top:1px solid var(--line);border-radius:20px 20px 0 0;padding:20px 16px calc(20px + env(safe-area-inset-bottom));width:100%}
+.modal p{margin:0 0 16px;line-height:1.4}
+.nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#081a27;border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom);z-index:1000}
+.nav button{flex:1;background:none;color:var(--mut);padding:12px 0 10px;font-size:12px;font-weight:600}
+.nav button.on{color:var(--acc)}
+.nav svg{display:block;margin:0 auto 3px;width:22px;height:22px}
+.legend{display:flex;justify-content:space-between;font-size:11px;color:var(--mut);margin-top:6px}
+.legend .bar{flex:1;height:6px;margin:4px 8px;border-radius:3px;background:linear-gradient(90deg,#3b82f6,#22d3c5,#a3e635,#ffb84d,#ff5d6c)}
+.leaflet-container{font:inherit}
+</style>
+</head>
+<body>
+
+<!-- ACCUEIL -->
+<section id="home" class="view on">
+  <h1>Wing<b>Track</b></h1>
+  <p class="sub">Suivi de sessions wingfoil</p>
+  <button class="btn pri big-start" id="bStart">▶ Démarrer une session</button>
+  <h2>Records</h2>
+  <div class="grid" id="records"></div>
+  <h2>Sessions</h2>
+  <div class="list" id="sessions"></div>
+</section>
+
+<!-- LIVE -->
+<section id="live" class="view">
+  <div class="top">
+    <div class="gps"><span><span class="dot" id="gDot"></span><span id="gTxt">Recherche GPS…</span></span><span id="lClock">00:00:00</span></div>
+    <div class="speed" id="lSpeedBox"><div class="v" id="lSpeed">0.0</div><div class="u" id="lUnit">km/h</div></div>
+  </div>
+  <div class="grid g3">
+    <div class="tile hl"><div class="l">Vmax</div><div class="v" id="lMax">0</div></div>
+    <div class="tile"><div class="l">Meilleur 10 s</div><div class="v" id="l10">0</div></div>
+    <div class="tile"><div class="l">Distance</div><div class="v" id="lDist">0</div></div>
+    <div class="tile"><div class="l">Sur le foil</div><div class="v" id="lFoil">0:00</div></div>
+    <div class="tile"><div class="l">Virages</div><div class="v" id="lTurns">0</div></div>
+    <div class="tile"><div class="l">Moy. mvt</div><div class="v" id="lAvg">0</div></div>
+  </div>
+  <div id="map"></div>
+  <div class="live-ctl">
+    <button class="btn" id="bPause">Pause</button>
+    <button class="btn red" id="bStop">Terminer</button>
+  </div>
+</section>
+
+<!-- DÉTAIL -->
+<section id="detail" class="view">
+  <button class="back" id="bBack">‹ Sessions</button>
+  <div class="row"><div class="grow"><h1 id="dName" style="font-size:22px"></h1><p class="sub" id="dDate"></p></div></div>
+  <div id="dmap"></div>
+  <div class="legend"><span id="lgMin">0</span><span class="bar"></span><span id="lgMax">30</span></div>
+  <h2>Vitesse</h2>
+  <div class="grid g3" id="dSpeed"></div>
+  <h2>Session</h2>
+  <div class="grid g3" id="dSess"></div>
+  <h2>Courbe de vitesse</h2>
+  <canvas id="chart"></canvas>
+  <h2>Actions</h2>
+  <div class="grid">
+    <button class="btn" id="bRename">Renommer</button>
+    <button class="btn" id="bGpx">Exporter GPX</button>
+    <button class="btn" id="bShare">Partager</button>
+    <button class="btn" id="bDel" style="color:var(--red)">Supprimer</button>
+  </div>
+</section>
+
+<!-- IMPORT -->
+<section id="import" class="view">
+  <h1>Importer</h1>
+  <p class="sub">Sessions de ta montre ou d'une autre appli</p>
+  <button class="btn pri big-start" id="bPick">Choisir un fichier GPX / TCX</button>
+  <input type="file" id="file" accept=".gpx,.tcx,application/gpx+xml,application/xml,text/xml" multiple hidden>
+  <h2>Depuis la Galaxy Watch</h2>
+  <div class="note">
+    1. Enregistre ta session sur la montre avec une appli qui exporte en GPX (par ex. Strava pour Wear OS, ou une appli de tracé GPS).<br>
+    2. Récupère le fichier GPX sur ton téléphone (depuis Strava web : ⋯ › Exporter GPX).<br>
+    3. Importe-le ici : toutes les stats wingfoil sont recalculées (Vmax, 10 s, 100 m, 500 m, temps sur le foil, virages…).
+  </div>
+</section>
+
+<!-- RÉGLAGES -->
+<section id="settings" class="view">
+  <h1>Réglages</h1>
+  <div class="field"><label>Unité de vitesse</label>
+    <div class="seg" id="sUnit"><button data-u="kmh">km/h</button><button data-u="kn">nœuds</button></div></div>
+  <div class="field"><label>Seuil « sur le foil » (km/h)</label>
+    <input type="number" id="sFoil" min="5" max="30" step="1"></div>
+  <div class="field"><label>Fond de carte</label>
+    <div class="seg" id="sMap"><button data-m="sat">Satellite</button><button data-m="osm">Plan</button></div></div>
+  <div class="field"><label>Annonce vocale (écouteurs)</label>
+    <div class="seg" id="sVoice"><button data-v="0">Off</button><button data-v="1">Records</button><button data-v="2">+ toutes les 5 min</button></div></div>
+  <h2>Sauvegarde</h2>
+  <div class="grid">
+    <button class="btn" id="bBackup">Exporter tout (JSON)</button>
+    <button class="btn" id="bRestore">Restaurer</button>
+  </div>
+  <input type="file" id="fileRestore" accept=".json,application/json" hidden>
+  <h2>Conseils sur l'eau</h2>
+  <div class="note">
+    • Garde l'écran allumé (l'appli l'empêche de se mettre en veille) : Android coupe le GPS des applis web quand l'écran s'éteint.<br>
+    • Baisse la luminosité au minimum et mets le téléphone dans une pochette étanche, fixée au bras ou au harnais.<br>
+    • Attends le point vert « GPS précis » avant de partir.<br>
+    • Les sessions sont stockées sur ce téléphone : pense à l'export JSON de temps en temps.
+  </div>
+</section>
+
+<nav class="nav" id="nav">
+  <button data-v="home" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/></svg>Sessions</button>
+  <button data-v="import"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v3h16v-3"/></svg>Importer</button>
+  <button data-v="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>Réglages</button>
+</nav>
+
+<div class="modal" id="modal"><div class="box"><p id="mTxt"></p><div id="mExtra"></div><div class="row"><button class="btn grow" id="mNo">Annuler</button><button class="btn pri grow" id="mYes">OK</button></div></div></div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="stats.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
