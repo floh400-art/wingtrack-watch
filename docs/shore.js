@@ -133,7 +133,7 @@ function shoreFromIndex(s, idx) {
   idx.waters.forEach(w => { const p = w.geometry[0]; if (p && Math.abs(p.lat - s.lat) < 0.1 && Math.abs(p.lon - s.lon) < 0.15) els.push(w); });
   return shoreFromElements(s, els);
 }
-const tick = () => new Promise(r => setTimeout(r, 0));
+const shTick = () => new Promise(r => setTimeout(r, 0));
 async function ensureShoreArea(map, spots) {
   if (!map || map.getZoom() < 10 || !navigator.onLine) return false;
   const todo = spots.filter(s => SHORE[shKey(s)] == null).slice(0, 60);
@@ -147,7 +147,7 @@ async function ensureShoreArea(map, spots) {
     const idx = buildCoastIndex(j.elements || []);
     for (let i = 0; i < todo.length; i++) {
       SHORE[shKey(todo[i])] = Math.round(shoreFromIndex(todo[i], idx));
-      if (i % 10 === 9) await tick(); // laisse respirer l'écran
+      if (i % 10 === 9) await shTick(); // laisse respirer l'écran
     }
     saveShore(); return true;
   } catch (e) {
