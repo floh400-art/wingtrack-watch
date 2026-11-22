@@ -18,6 +18,7 @@ function openCarte() {
     cmBase();
     CM.layer = L.layerGroup().addTo(CM.map);
     CM.staLayer = L.layerGroup().addTo(CM.map);
+    CM.field = new WindField(CM.map);
     // toucher la carte ailleurs que sur un spot : créer un spot ici / prévisions
     CM.map.on('click', e => cmEmptyTap(e.latlng.lat, e.latlng.lng));
     CM.map.on('moveend', () => { clearTimeout(CM.t); CM.t = setTimeout(cmDraw, 300); });
@@ -27,7 +28,17 @@ function openCarte() {
   // les spots de session pour la carte
   DB.all().then(all => { M.sessionSpots = groupSpots(all).map(sp => ({ name: sp.name, lat: sp.c[0], lon: sp.c[1] })); cmDraw(); }).catch(() => {});
   cmPaintTime(); $('cmOnly').classList.toggle('on', CM.onlyOk);
+  if (CM.field) { CM.field.setTime(cmTime()); CM.field.setOn(cfg.cmField !== false); }
+  $('cmFieldBtn').classList.toggle('off', cfg.cmField === false); cmLegend();
 }
+function cmLegend() {
+  const on = cfg.cmField !== false;
+  $('cmLeg').style.display = on ? '' : 'none';
+  if (!on) return;
+  const marks = { kn: [5, 10, 15, 20, 25, 30, 40], kmh: [10, 20, 30, 40, 50, 60, 70], ms: [3, 5, 8, 10, 13, 15, 20], mph: [5, 10, 15, 20, 30, 40, 50] }[cfg.unit] || [10, 20, 30, 40, 50, 60, 70];
+  $('cmLeg').innerHTML = marks.map(v => `<span style="color:rgb(${windRGB(v / curU().f * 3.6).join(',')})">${v}</span>`).join('') + `<b>${uLabel()}</b>`;
+}
+$('cmFieldBtn').onclick = () => { cfg.cmField = cfg.cmField === false ? true : false; saveCfg(); $('cmFieldBtn').classList.toggle('off', cfg.cmField === false); if (CM.field) CM.field.setOn(cfg.cmField !== false); cmLegend(); toast(cfg.cmField === false ? 'Vent animé masqué' : 'Vent animé affiché'); };
 function cmBase() {
   (CM.base || []).forEach(l => l.remove());
   const b = WM_BASES[cfg.cmBase || 'light'] || WM_BASES.light;
@@ -66,17 +77,17 @@ function cmPaintTime() {
   $('cmClock').textContent = CM.h === 0 ? 'Maintenant' : `${dayLabel(t.slice(0, 10))} ${t.slice(11, 13)}h`;
   $('cmTime').value = CM.h;
 }
-$('cmTime').oninput = () => { CM.h = +$('cmTime').value; cmPaintTime(); clearTimeout(CM.t); CM.t = setTimeout(() => { cmDraw(); CM.paintLocal && CM.paintLocal(); }, 80); };
+$('cmTime').oninput = () => { CM.h = +$('cmTime').value; cmPaintTime(); CM.field && CM.field.setTime(cmTime()); clearTimeout(CM.t); CM.t = setTimeout(() => { cmDraw(); CM.paintLocal && CM.paintLocal(); }, 80); };
 $('cmPlay').onclick = () => {
   if (CM.playing) { clearInterval(CM.playing); CM.playing = null; $('cmPlay').textContent = '▶'; return; }
   $('cmPlay').textContent = '❚❚';
-  CM.playing = setInterval(() => { CM.h = (CM.h + 1) % 168; cmPaintTime(); cmDraw(); CM.paintLocal && CM.paintLocal(); }, 800);
+  CM.playing = setInterval(() => { CM.h = (CM.h + 1) % 168; cmPaintTime(); CM.field && CM.field.setTime(cmTime()); cmDraw(); CM.paintLocal && CM.paintLocal(); }, 800);
 };
 $('cmOnly').onclick = () => { CM.onlyOk = !CM.onlyOk; cfg.cmOnlyOk = CM.onlyOk; saveCfg(); $('cmOnly').classList.toggle('on', CM.onlyOk); cmDraw(); };
-$('cmBaseBtn').onclick = () => { const o = ['light', 'street', 'sat', 'dark']; cfg.cmBase = o[(o.indexOf(cfg.cmBase || 'light') + 1) % o.length]; saveCfg(); cmBase(); toast('Fond : ' + WM_BASES[cfg.cmBase].l); };
+$('cmBaseBtn').onclick = () => { const o = ['light', 'street', 'sat', 'dark']; cfg.cmBase = o[(o.indexOf(cfg.cmBase || 'light') + 1) % o.length]; saveCfg(); cmBase(); CM.field && CM.field.drawHeat(); toast('Fond : ' + WM_BASES[cfg.cmBase].l); };
 $('cmHere').onclick = () => hereThen((la, lo) => CM.map && CM.map.setView([la, lo], 10));
 $('cmSearch').onclick = () => { show('meteo'); setTimeout(() => $('mxQ').focus(), 100); };
-function cmStop() { if (CM.playing) { clearInterval(CM.playing); CM.playing = null; $('cmPlay').textContent = '▶'; } }
+function cmStop() { if (CM.playing) { clearInterval(CM.playing); CM.playing = null; $('cmPlay').textContent = '▶'; } if (CM.field) CM.field.stop(); }
 
 /* ---------- Local : spots autour d'un endroit ---------- */
 CM.loc = null; CM.radius = cfg.cmRadius || 50;

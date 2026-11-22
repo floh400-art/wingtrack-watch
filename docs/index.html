@@ -269,6 +269,8 @@ table.fc td.shcell{padding:4px 2px}table.fc td.shcell small{font-weight:800;font
 .stmk svg{width:18px;height:18px;fill:#fff;stroke:#06141f;stroke-width:1.5;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))}
 .stmk span{font-size:11px;font-weight:800;padding:0 5px;border-radius:7px;border:1.5px solid #fff;margin-top:-2px;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .wmbtn.off{opacity:.45}
+.cmleg{display:flex;justify-content:space-between;margin-top:6px;font-weight:800;font-size:12px;background:#555;border-radius:8px;padding:2px 8px}
+.cmleg b{color:#fff;font-size:10px}
 </style>
 </head>
 <body>
@@ -378,8 +380,8 @@ table.fc td.shcell{padding:4px 2px}table.fc td.shcell small{font-weight:800;font
 <section id="carte" class="view">
   <div id="cmMap"></div>
   <div class="cmtop">
-    <div class="cmtitle"><b>Spots</b><span id="cmCount">Chargement des spots…</span></div>
-    <div class="cmbtns"><button class="wmbtn loc" id="cmLocalBtn" title="Spots autour de moi">Local</button><button class="wmbtn" id="cmSearch" title="Chercher">🔍</button><button class="wmbtn" id="cmHere" title="Ma position">📍</button><button class="wmbtn" id="cmBaseBtn" title="Fond de carte">🗺️</button><button class="wmbtn" id="cmStaBtn" title="Balises de vent en direct">🌀</button></div>
+    <div class="cmtitle"><b>Spots</b><span id="cmCount">Chargement des spots…</span><div class="cmleg" id="cmLeg"></div></div>
+    <div class="cmbtns"><button class="wmbtn loc" id="cmLocalBtn" title="Spots autour de moi">Local</button><button class="wmbtn" id="cmSearch" title="Chercher">🔍</button><button class="wmbtn" id="cmHere" title="Ma position">📍</button><button class="wmbtn" id="cmBaseBtn" title="Fond de carte">🗺️</button><button class="wmbtn" id="cmStaBtn" title="Balises de vent en direct">🌀</button><button class="wmbtn" id="cmFieldBtn" title="Vent animé">🌬️</button></div>
   </div>
   <div class="cmlocal" id="cmLocal">
     <div class="row"><button class="cmgrip" id="cmLocToggle"></button></div>
@@ -514,6 +516,7 @@ table.fc td.shcell{padding:4px 2px}table.fc td.shcell small{font-weight:800;font
 <script src="replay.js"></script>
 <script src="spots.js"></script>
 <script src="shore.js"></script>
+<script src="fieldlayer.js"></script>
 <script src="stations.js"></script>
 <script src="carte.js"></script>
 </body>
