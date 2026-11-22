@@ -7,7 +7,9 @@
 const WM = {
   map: null, heat: null, part: null, grid: null, t: 0, layer: cfg.wmLayer || 'wind', model: cfg.wmModel || 'best',
   playing: null, anim: null, particles: [], loading: false, spotsLayer: null, pending: null,
+  res: cfg.wmRes || 'normal', iso: cfg.wmIso !== false, anim2: cfg.wmAnim !== false,
 };
+const WM_RES = { fine: { l: 'Fine', px: 30, d: 'plus de détail, plus lent' }, normal: { l: 'Normale', px: 42, d: 'équilibrée' }, fast: { l: 'Rapide', px: 62, d: 'chargement rapide' } };
 const WM_MODELS = [
   { id: 'best', name: 'Auto', desc: 'meilleur modèle pour la zone' },
   { id: 'meteofrance_seamless', name: 'AROME', desc: '1,3 km' },
@@ -56,16 +58,40 @@ function placeCanvases() {
 
 /* ---------- barres de commande ---------- */
 function renderWmBars() {
-  $('wmLayers').innerHTML = Object.entries(WM_LAYERS).map(([k, v]) => `<button class="${WM.layer === k ? 'on' : ''}" data-l="${k}">${v}</button>`).join('');
-  $('wmModels').innerHTML = WM_MODELS.map(m => `<button class="${WM.model === m.id ? 'on' : ''}" data-m="${m.id}">${m.name}</button>`).join('');
-  $('wmModels').style.display = isWave() ? 'none' : '';
-  document.querySelectorAll('#wmLayers button').forEach(b => b.onclick = () => { WM.layer = b.dataset.l; cfg.wmLayer = WM.layer; saveCfg(); WM.grid = null; renderWmBars(); loadGrid(); });
-  document.querySelectorAll('#wmModels button').forEach(b => b.onclick = () => { WM.model = b.dataset.m; cfg.wmModel = WM.model; saveCfg(); WM.grid = null; renderWmBars(); loadGrid(); });
+  const mdl = isWave() ? 'Marin' : WM_MODELS.find(m => m.id === WM.model).name;
+  $('wmOpt').innerHTML = `<span class="wmo-ico">◧</span><b>${mdl}</b><small>${(WM_RES[WM.res] || WM_RES.normal).l}</small><span class="wmo-ico">${{ wind: '≋', gust: '⩰', wave: '〰', swell: '∿' }[WM.layer]}</span>`;
   renderLegend();
   const opts = favs().concat((M.sessionSpots || []).filter(s => !isFav(s)));
   $('wmSpot').innerHTML = `<option value="">📍 Aller à un spot…</option>` + opts.map((s, k) => `<option value="${k}">${esc(s.name)}</option>`).join('');
   $('wmSpot').onchange = () => { const s = opts[+$('wmSpot').value]; if (s) WM.map.setView([s.lat, s.lon], 11); $('wmSpot').value = ''; };
+  renderWmPanel();
 }
+function renderWmPanel() {
+  const btn = (on, attrs, label, dis) => `<button class="${on ? 'on' : ''}" ${attrs} ${dis ? 'disabled' : ''}>${label}</button>`;
+  const tog = (id, on, label) => `<div class="wmp-tog"><span>${label}</span><button class="sw ${on ? 'on' : ''}" id="${id}"><i></i></button></div>`;
+  $('wmPanelBody').innerHTML = `
+    <h3>Couche de carte</h3>
+    <div class="wmp-grid">${Object.entries(WM_LAYERS).map(([k, v]) => btn(WM.layer === k, `data-l="${k}"`, `${{ wind: '≋', gust: '⩰', wave: '〰', swell: '∿' }[k]} ${v}`)).join('')}</div>
+    <h3>Modèle de prévision</h3>
+    <div class="wmp-grid">${WM_MODELS.map(m => btn(WM.model === m.id, `data-m="${m.id}"`, `${m.name}<small>${m.desc}</small>`, isWave())).join('')}</div>
+    ${isWave() ? '<p class="cap">Vagues et houle : modèle marin unique (Open-Meteo Marine).</p>' : ''}
+    <h3>Finesse de la grille</h3>
+    <div class="wmp-grid three">${Object.entries(WM_RES).map(([k, r]) => btn(WM.res === k, `data-r="${k}"`, `${r.l}<small>${r.d}</small>`)).join('')}</div>
+    <h3>Affichage</h3>
+    ${tog('wmIso', WM.iso, 'Isobares + centres H / L' + (isWave() ? ' <small>(couches vent)</small>' : ''))}
+    ${tog('wmAnimT', WM.anim2, 'Traînées animées')}
+    <h3>Unité</h3>
+    <div class="wmp-grid four">${Object.keys(UNITS).map(u => btn(cfg.unit === u, `data-u="${u}"`, UNITS[u].l)).join('')}</div>`;
+  const re = () => { WM.grid = null; renderWmBars(); loadGrid(); };
+  document.querySelectorAll('#wmPanelBody [data-l]').forEach(b => b.onclick = () => { WM.layer = b.dataset.l; cfg.wmLayer = WM.layer; saveCfg(); re(); });
+  document.querySelectorAll('#wmPanelBody [data-m]').forEach(b => b.onclick = () => { WM.model = b.dataset.m; cfg.wmModel = WM.model; saveCfg(); re(); });
+  document.querySelectorAll('#wmPanelBody [data-r]').forEach(b => b.onclick = () => { WM.res = b.dataset.r; cfg.wmRes = WM.res; saveCfg(); re(); });
+  document.querySelectorAll('#wmPanelBody [data-u]').forEach(b => b.onclick = () => { cfg.unit = b.dataset.u; saveCfg(); renderWmBars(); paintTime(); });
+  $('wmIso').onclick = () => { WM.iso = !WM.iso; cfg.wmIso = WM.iso; saveCfg(); renderWmPanel(); drawHeat(); };
+  $('wmAnimT').onclick = () => { WM.anim2 = !WM.anim2; cfg.wmAnim = WM.anim2; saveCfg(); renderWmPanel(); };
+}
+$('wmOpt').onclick = () => { renderWmPanel(); $('wmPanel').classList.add('on'); };
+$('wmPanelClose').onclick = () => $('wmPanel').classList.remove('on');
 function renderLegend() {
   if (isWave()) {
     $('wmLegend').innerHTML = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => `<span style="color:rgb(${waveRGB(v).join(',')})">${v}</span>`).join('') + '<b>mètres</b>';
@@ -85,12 +111,13 @@ function drawWmSpots() {
 async function loadGrid() {
   if (!WM.map) return;
   const sz = WM.map.getSize(), b = WM.map.getBounds();
-  const cols = Math.max(5, Math.min(12, Math.round(sz.x / 42))), rows = Math.max(6, Math.min(20, Math.round(sz.y / 42)));
+  const px = (WM_RES[WM.res] || WM_RES.normal).px;
+  const cols = Math.max(5, Math.min(16, Math.round(sz.x / px))), rows = Math.max(6, Math.min(26, Math.round(sz.y / px)));
   // marge de 15 % pour couvrir les bords pendant les déplacements
   const S = b.getSouth(), N = b.getNorth(), Wd = b.getWest(), E = b.getEast();
   const dLa = (N - S) * 0.15, dLo = (E - Wd) * 0.15;
   const g = { s: S - dLa, n: N + dLa, w: Wd - dLo, e: E + dLo, cols, rows, layer: WM.layer, model: WM.model };
-  const key = [g.layer, g.model, g.s.toFixed(3), g.w.toFixed(3), g.n.toFixed(3), g.e.toFixed(3), cols, rows].join('|');
+  const key = [g.layer, g.model, WM.res, g.s.toFixed(3), g.w.toFixed(3), g.n.toFixed(3), g.e.toFixed(3), cols, rows].join('|');
   if (WM.grid && WM.grid.key === key) return;
   const lats = [], lons = [];
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { lats.push(g.s + r * (g.n - g.s) / (rows - 1)); lons.push(g.w + c * (g.e - g.w) / (cols - 1)); }
@@ -99,13 +126,13 @@ async function loadGrid() {
   try {
     let j;
     if (isWave()) j = await getJSON(`${MAR}?${ll}&hourly=wave_height,wave_direction,swell_wave_height,swell_wave_direction,wave_period,swell_wave_period`);
-    else j = await getJSON(`${OM}?${ll}&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m${WM.model !== 'best' ? '&models=' + WM.model : ''}`);
+    else j = await getJSON(`${OM}?${ll}&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m,pressure_msl${WM.model !== 'best' ? '&models=' + WM.model : ''}`);
     if (!Array.isArray(j)) j = [j];
     const first = j.find(x => x && x.hourly && x.hourly.time);
     if (!first) throw new Error('vide');
     const T = first.hourly.time, nT = T.length, n = rows * cols;
     // champs u/v (vers où ça va) + valeur affichée, par heure
-    const U = new Float32Array(nT * n).fill(NaN), V = new Float32Array(nT * n).fill(NaN), S2 = new Float32Array(nT * n).fill(NaN), P = new Float32Array(nT * n).fill(NaN);
+    const U = new Float32Array(nT * n).fill(NaN), V = new Float32Array(nT * n).fill(NaN), S2 = new Float32Array(nT * n).fill(NaN), P = new Float32Array(nT * n).fill(NaN), PR = new Float32Array(nT * n).fill(NaN);
     j.forEach((x, k) => {
       if (!x || !x.hourly) return;
       const h = x.hourly;
@@ -113,6 +140,7 @@ async function loadGrid() {
       const dir = isWave() ? (WM.layer === 'wave' ? h.wave_direction : h.swell_wave_direction) : h.wind_direction_10m;
       const flow = isWave() ? h.wave_height : h.wind_speed_10m; // vitesse des traînées
       const per = isWave() ? (WM.layer === 'wave' ? h.wave_period : h.swell_wave_period) : null;
+      if (h.pressure_msl) for (let t = 0; t < nT; t++) if (h.pressure_msl[t] != null) PR[t * n + k] = h.pressure_msl[t];
       for (let t = 0; t < nT; t++) {
         const v = sp && sp[t], d = dir && dir[t];
         if (v == null || d == null) continue;
@@ -124,7 +152,7 @@ async function loadGrid() {
     });
     const nowL = new Date(Date.now() + (first.utc_offset_seconds || 0) * 1000).toISOString().slice(0, 13) + ':00';
     const prevT = WM.grid && WM.grid.T[WM.t];
-    WM.grid = { ...g, key, T, nT, n, U, V, S: S2, P };
+    WM.grid = { ...g, key, T, nT, n, U, V, S: S2, P, PR, hasP: !isWave() && PR.some(x => !isNaN(x)) };
     const keep = prevT ? T.indexOf(prevT) : -1;
     WM.t = keep >= 0 ? keep : Math.max(0, T.indexOf(nowL));
     $('wmTime').max = nT - 1; $('wmTime').value = WM.t;
@@ -179,6 +207,65 @@ function drawHeat() {
   oc.putImageData(img, 0, 0);
   c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
   c.drawImage(off, 0, 0, W, H);
+  if (WM.iso && WM.grid.hasP) drawIsobars(c, W, H);
+}
+
+/* ---------- isobares + centres H / L ---------- */
+function sampleP(lat, lon, t) {
+  const g = WM.grid;
+  const fx = (lon - g.w) / (g.e - g.w) * (g.cols - 1), fy = (lat - g.s) / (g.n - g.s) * (g.rows - 1);
+  if (fx < 0 || fy < 0 || fx > g.cols - 1 || fy > g.rows - 1) return NaN;
+  const x0 = Math.min(g.cols - 2, Math.floor(fx)), y0 = Math.min(g.rows - 2, Math.floor(fy)), dx = fx - x0, dy = fy - y0, b = t * g.n;
+  const v = (x, y) => g.PR[b + y * g.cols + x];
+  return v(x0, y0) * (1 - dx) * (1 - dy) + v(x0 + 1, y0) * dx * (1 - dy) + v(x0, y0 + 1) * (1 - dx) * dy + v(x0 + 1, y0 + 1) * dx * dy;
+}
+function drawIsobars(c, W, H) {
+  const st = 14, nx = Math.ceil(W / st) + 1, ny = Math.ceil(H / st) + 1, F = new Float32Array(nx * ny);
+  let lo = Infinity, hi = -Infinity;
+  for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
+    const ll = WM.map.containerPointToLatLng([x * st, y * st]), v = sampleP(ll.lat, ll.lng, WM.t);
+    F[y * nx + x] = v; if (!isNaN(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  }
+  if (!isFinite(lo)) return;
+  const span = hi - lo, stepP = span > 24 ? 4 : span > 6 ? 2 : 1;
+  c.save(); c.strokeStyle = 'rgba(255,255,255,0.7)'; c.lineWidth = 1.2; c.font = 'bold 10px system-ui'; c.textAlign = 'center';
+  const labels = [];
+  for (let L0 = Math.ceil(lo / stepP) * stepP; L0 <= hi; L0 += stepP) {
+    c.beginPath(); let seg = 0;
+    for (let y = 0; y < ny - 1; y++) for (let x = 0; x < nx - 1; x++) {
+      const a = F[y * nx + x], b = F[y * nx + x + 1], cc = F[(y + 1) * nx + x + 1], d = F[(y + 1) * nx + x];
+      if (isNaN(a) || isNaN(b) || isNaN(cc) || isNaN(d)) continue;
+      const pts = [];
+      const edge = (v1, v2, x1, y1, x2, y2) => { if ((v1 < L0) !== (v2 < L0)) { const f = (L0 - v1) / (v2 - v1); pts.push([(x1 + (x2 - x1) * f) * st, (y1 + (y2 - y1) * f) * st]); } };
+      edge(a, b, x, y, x + 1, y); edge(b, cc, x + 1, y, x + 1, y + 1); edge(cc, d, x + 1, y + 1, x, y + 1); edge(d, a, x, y + 1, x, y);
+      for (let k = 0; k + 1 < pts.length; k += 2) {
+        c.moveTo(pts[k][0], pts[k][1]); c.lineTo(pts[k + 1][0], pts[k + 1][1]); seg++;
+        if (seg % 40 === 20) labels.push([pts[k][0], pts[k][1], L0]);
+      }
+    }
+    c.stroke();
+  }
+  labels.forEach(([x, y, v]) => { c.fillStyle = 'rgba(6,20,31,.75)'; c.fillRect(x - 15, y - 7, 30, 13); c.fillStyle = '#fff'; c.fillText(Math.round(v), x, y + 3); });
+  // centres de haute / basse pression sur la grille du modèle
+  const g = WM.grid, b0 = WM.t * g.n;
+  for (let r = 1; r < g.rows - 1; r++) for (let q = 1; q < g.cols - 1; q++) {
+    const v = g.PR[b0 + r * g.cols + q]; if (isNaN(v)) continue;
+    let isMax = true, isMin = true;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue;
+      const w = g.PR[b0 + (r + dy) * g.cols + q + dx]; if (isNaN(w)) continue;
+      if (w >= v) isMax = false; if (w <= v) isMin = false;
+    }
+    if (!isMax && !isMin) continue;
+    const lat = g.s + r * (g.n - g.s) / (g.rows - 1), lon = g.w + q * (g.e - g.w) / (g.cols - 1);
+    const p = WM.map.latLngToContainerPoint([lat, lon]);
+    if (p.x < 0 || p.y < 0 || p.x > W || p.y > H) continue;
+    c.fillStyle = isMin ? '#ff5d6c' : '#3b82f6'; c.beginPath(); c.arc(p.x, p.y, 13, 0, 7); c.fill();
+    c.strokeStyle = '#fff'; c.lineWidth = 2; c.stroke();
+    c.fillStyle = '#fff'; c.font = 'bold 14px system-ui'; c.fillText(isMin ? 'L' : 'H', p.x, p.y + 5);
+    c.font = 'bold 10px system-ui'; c.fillText(Math.round(v), p.x, p.y + 25);
+  }
+  c.restore();
 }
 
 /* ---------- traînées animées ---------- */
@@ -193,6 +280,7 @@ function startAnim() {
   const tick = () => {
     WM.anim = requestAnimationFrame(tick);
     if (!WM.grid || !WM.part || document.hidden) return;
+    if (!WM.anim2) { WM.part.getContext('2d').clearRect(0, 0, WM.part.width, WM.part.height); return; }
     const cv = WM.part, c = cv.getContext('2d'), W = cv.width, H = cv.height;
     if (!W || !H) { placeCanvases(); resetParticles(); return; }
     c.globalCompositeOperation = 'destination-in'; c.fillStyle = 'rgba(0,0,0,0.90)'; c.fillRect(0, 0, W, H);

@@ -160,7 +160,7 @@ textarea{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line)
 #wmap.view:not(.on){display:none}
 #wmMap{position:absolute;inset:0;width:100%;height:100%;background:#0a1b27}
 .wmcv{position:absolute;left:0;top:0;pointer-events:none}
-.wmtop{position:absolute;top:calc(10px + env(safe-area-inset-top));left:10px;right:10px;display:flex;gap:8px;z-index:800}
+.wmtop{position:absolute;top:calc(10px + env(safe-area-inset-top));left:10px;right:86px;display:flex;gap:8px;z-index:800}
 .wmbtn{width:44px;height:44px;border-radius:22px;background:rgba(6,20,31,.75);color:#fff;font-size:26px;font-weight:700;line-height:1}
 .wmsel{flex:1;height:44px;border-radius:22px;border:0;background:rgba(6,20,31,.75);color:#fff;font:inherit;font-weight:700;padding:0 14px}
 .wmside{position:absolute;top:calc(62px + env(safe-area-inset-top));left:10px;right:10px;z-index:800;display:flex;gap:6px}
@@ -175,6 +175,22 @@ textarea{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line)
 #wmTime{width:100%;accent-color:var(--acc)}
 .wmlegend{display:flex;justify-content:space-between;align-items:center;margin:6px -12px -8px;padding:6px 14px calc(6px + env(safe-area-inset-bottom));background:#646464;font-weight:800;font-size:15px}
 .wmlegend b{color:#fff;font-size:12px}
+.wmopt{position:absolute;top:calc(10px + env(safe-area-inset-top));right:10px;z-index:800;width:68px;padding:10px 4px;border-radius:34px;background:rgba(6,20,31,.8);color:#fff;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:12px}
+.wmopt b{font-size:12px}.wmopt small{color:#9fb7c4;font-size:10px}.wmo-ico{font-size:18px;line-height:1}
+.wmpanel{position:absolute;top:calc(8px + env(safe-area-inset-top));right:8px;left:56px;bottom:90px;z-index:1200;background:rgba(10,22,32,.96);border-radius:26px;padding:14px 16px;overflow-y:auto;display:none;box-shadow:0 10px 40px rgba(0,0,0,.6)}
+.wmpanel.on{display:block}
+.wmpanel h2{margin:4px 0 4px;font-size:22px;color:#fff;text-transform:none;letter-spacing:0}
+.wmpanel h3{color:#9fb7c4;font-size:14px;margin:18px 0 8px;font-weight:700}
+.wmp-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.wmp-grid.three{grid-template-columns:1fr 1fr 1fr}.wmp-grid.four{grid-template-columns:repeat(4,1fr)}
+.wmp-grid button{background:rgba(255,255,255,.08);color:#fff;border-radius:22px;padding:10px 6px;font-weight:700;font-size:14px}
+.wmp-grid button small{display:block;font-weight:500;font-size:10px;color:#9fb7c4;margin-top:2px}
+.wmp-grid button.on{background:#fff;color:#06141f}.wmp-grid button.on small{color:#4a6272}
+.wmp-grid button:disabled{opacity:.35}
+.wmp-tog{display:flex;justify-content:space-between;align-items:center;padding:8px 0;color:#fff;font-size:15px}
+.wmp-tog small{color:#9fb7c4}
+.sw{width:52px;height:30px;border-radius:15px;background:rgba(255,255,255,.2);position:relative;flex-shrink:0}
+.sw i{position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:12px;background:#fff;transition:.2s}
+.sw.on{background:#2f8cff}.sw.on i{left:25px}
 </style>
 </head>
 <body>
@@ -282,8 +298,11 @@ textarea{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line)
     <button class="wmbtn" id="wmClose">‹</button>
     <select id="wmSpot" class="wmsel"></select>
   </div>
-  <div class="wmside" id="wmLayers"></div>
-  <div class="wmmodels" id="wmModels"></div>
+  <button class="wmopt" id="wmOpt"></button>
+  <div class="wmpanel" id="wmPanel">
+    <div class="row"><h2 class="grow">Options de prévision</h2><button class="wmbtn" id="wmPanelClose">✕</button></div>
+    <div id="wmPanelBody"></div>
+  </div>
   <div class="wmclock" id="wmClock">--:--</div>
   <div class="wmbottom">
     <div class="row">
