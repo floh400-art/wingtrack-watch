@@ -22,12 +22,25 @@ const wUnit = () => uLabel();
 const wv = kmh => kmh == null ? null : kmh / 3.6 * curU().f;
 const wf = kmh => kmh == null ? '–' : Math.round(wv(kmh));
 const kn = kmh => kmh == null ? null : kmh / KN;
+// palette PredictWind (relevée sur leur échelle) : nœuds → couleur
+const WIND_STOPS = [[0, [100, 25, 229]], [2.7, [100, 25, 229]], [4.3, [66, 43, 247]], [5.1, [49, 52, 251]], [5.9, [47, 74, 215]], [6.7, [48, 99, 182]], [7.4, [49, 121, 146]], [8.2, [50, 145, 113]], [9.0, [49, 168, 78]], [9.8, [49, 192, 42]], [11.4, [99, 204, 26]], [13.0, [152, 210, 14]], [14.6, [206, 217, 3]], [16.2, [229, 197, 0]], [17.8, [239, 168, 0]], [19.4, [250, 138, 0]], [21.0, [255, 104, 1]], [22.5, [255, 63, 0]], [24.1, [255, 23, 0]], [25.7, [246, 1, 0]], [27.3, [230, 0, 0]], [28.9, [213, 1, 0]], [30.5, [195, 0, 0]], [32.1, [180, 2, 2]], [33.7, [164, 0, 0]], [35.2, [148, 0, 0]], [36.8, [130, 0, 0]], [38.4, [116, 0, 0]], [40.0, [102, 0, 0]], [41.6, [85, 0, 0]], [43.2, [78, 0, 0]], [45, [70, 0, 0]], [47.5, [125, 101, 100]], [50, [179, 168, 167]], [55, [214, 208, 207]]];
+function lut(stops, max, steps) {
+  const out = new Uint8ClampedArray(steps * 3);
+  for (let k = 0; k < steps; k++) {
+    const v = k / (steps - 1) * max;
+    let i = 0; while (i < stops.length - 2 && v > stops[i + 1][0]) i++;
+    const [a, ca] = stops[i], [b, cb] = stops[i + 1], f = Math.max(0, Math.min(1, (v - a) / (b - a)));
+    for (let c = 0; c < 3; c++) out[k * 3 + c] = ca[c] + (cb[c] - ca[c]) * f;
+  }
+  return out;
+}
+const WIND_LUT = lut(WIND_STOPS, 55, 551); // pas de 0,1 nœud
+function windRGB(kmh) { const k = Math.max(0, Math.min(550, Math.round(kmh / KN * 10))); return [WIND_LUT[k * 3], WIND_LUT[k * 3 + 1], WIND_LUT[k * 3 + 2]]; }
 function windColor(kmh) {
   if (kmh == null) return 'transparent';
-  const k = kn(kmh);
-  return k < 6 ? '#1d3b52' : k < 10 ? '#2f6f8f' : k < 14 ? '#2bb39a' : k < 18 ? '#7ccf3c' : k < 22 ? '#e6d23a' : k < 27 ? '#f39c34' : k < 33 ? '#ec4b4b' : '#b23bd1';
+  return 'rgb(' + windRGB(kmh).join(',') + ')';
 }
-const windTxt = kmh => kmh != null && kn(kmh) >= 10 && kn(kmh) < 27 ? '#06141f' : '#fff';
+const windTxt = kmh => kmh != null && kn(kmh) >= 9.5 && kn(kmh) < 21 ? '#06141f' : '#fff';
 const DIRS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'];
 const dirName = d => d == null ? '' : DIRS[Math.round(d / 22.5) % 16];
 const arrow = (d, col = 'currentColor') => d == null ? '' : `<span class="arr" style="transform:rotate(${d + 180}deg);color:${col}">↑</span>`;

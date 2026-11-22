@@ -19,21 +19,9 @@ const WM_MODELS = [
 const WM_LAYERS = { wind: 'Vent', gust: 'Rafales', wave: 'Vagues', swell: 'Houle' };
 
 /* ---------- palettes ---------- */
-// vent en nœuds (proche de l'échelle PredictWind)
-const WIND_STOPS = [[0, [98, 40, 160]], [5, [70, 70, 210]], [8, [40, 120, 225]], [11, [30, 175, 200]], [14, [40, 190, 90]], [17, [140, 205, 50]],
-  [20, [235, 220, 40]], [23, [245, 165, 40]], [26, [240, 90, 35]], [30, [215, 25, 40]], [35, [150, 10, 50]], [42, [95, 10, 60]], [55, [50, 5, 40]]];
+// vent : palette PredictWind définie dans meteo.js (WIND_STOPS / WIND_LUT / lut)
 const WAVE_STOPS = [[0, [70, 70, 210]], [0.5, [40, 120, 225]], [1, [30, 175, 200]], [1.5, [40, 190, 90]], [2, [235, 220, 40]], [3, [245, 140, 40]], [4, [215, 25, 40]], [6, [110, 10, 60]]];
-function lut(stops, max, steps) {
-  const out = new Uint8ClampedArray(steps * 3);
-  for (let k = 0; k < steps; k++) {
-    const v = k / (steps - 1) * max;
-    let i = 0; while (i < stops.length - 2 && v > stops[i + 1][0]) i++;
-    const [a, ca] = stops[i], [b, cb] = stops[i + 1], f = Math.max(0, Math.min(1, (v - a) / (b - a)));
-    for (let c = 0; c < 3; c++) out[k * 3 + c] = ca[c] + (cb[c] - ca[c]) * f;
-  }
-  return out;
-}
-const WIND_LUT = lut(WIND_STOPS, 55, 551), WAVE_LUT = lut(WAVE_STOPS, 6, 241);
+const WAVE_LUT = lut(WAVE_STOPS, 6, 241);
 const isWave = () => WM.layer === 'wave' || WM.layer === 'swell';
 
 /* ---------- ouverture ---------- */
@@ -84,7 +72,7 @@ function renderLegend() {
     $('wmLegend').innerHTML = [0, 0.5, 1, 1.5, 2, 3, 4, 5].map(v => `<span style="color:rgb(${[...WAVE_LUT.slice(Math.round(v / 6 * 240) * 3, Math.round(v / 6 * 240) * 3 + 3)]})">${v}</span>`).join('') + '<b>m</b>';
     return;
   }
-  const marks = { kn: [5, 10, 15, 20, 25, 30, 35, 40, 50], kmh: [10, 20, 30, 40, 50, 60, 70, 80], ms: [3, 5, 8, 10, 13, 15, 20, 25], mph: [5, 10, 15, 20, 30, 40, 50, 60] }[cfg.unit] || [10, 20, 30, 40, 50, 60, 70, 80];
+  const marks = { kn: [5, 10, 15, 20, 25, 30, 35, 40, 45, 50], kmh: [10, 20, 30, 40, 50, 60, 70, 80], ms: [3, 5, 8, 10, 13, 15, 20, 25], mph: [5, 10, 15, 20, 30, 40, 50, 60] }[cfg.unit] || [10, 20, 30, 40, 50, 60, 70, 80];
   $('wmLegend').innerHTML = marks.map(v => { const k = Math.min(550, Math.round(v / curU().f * 1.943844 * 10)); return `<span style="color:rgb(${[...WIND_LUT.slice(k * 3, k * 3 + 3)]})">${v}</span>`; }).join('') + `<b>${uLabel()}</b>`;
 }
 function drawWmSpots() {
@@ -186,7 +174,7 @@ function drawHeat() {
       const ll = x === 0 ? ll0 : WM.map.containerPointToLatLng([x * step + step / 2, y * step + step / 2]);
       const s = sample(ll.lat, ll.lng, WM.t), i = (y * w + x) * 4;
       if (!s) { d[i + 3] = 0; continue; }
-      const col = colorOf(s.s); d[i] = col[0]; d[i + 1] = col[1]; d[i + 2] = col[2]; d[i + 3] = 175;
+      const col = colorOf(s.s); d[i] = col[0]; d[i + 1] = col[1]; d[i + 2] = col[2]; d[i + 3] = 205;
     }
   }
   oc.putImageData(img, 0, 0);
