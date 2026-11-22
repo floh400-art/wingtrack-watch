@@ -8,7 +8,7 @@
 const SHORE = (() => { try { return JSON.parse(localStorage.getItem('wt_shore') || '{}'); } catch (e) { return {}; } })();
 const shKey = s => s.lat.toFixed(3) + ',' + s.lon.toFixed(3);
 const saveShore = () => { try { localStorage.setItem('wt_shore', JSON.stringify(SHORE)); } catch (e) {} };
-const SH_PENDING = new Map();
+const SH_PENDING = new Map(), SH_RETRY = new Set();
 
 // direction de la mer vue depuis la plage (°), null si inconnue
 function shoreOf(s) {
@@ -69,15 +69,36 @@ async function overpass(q) {
   }
   throw new Error('Overpass indisponible');
 }
+// Méthode 2 (secours) : où est la mer autour du spot ? On interroge le modèle de vagues sur
+// 2 cercles de 16 points (3 et 7 km) : là où il y a des vagues, c'est la mer.
+async function shoreFromMarine(s) {
+  const pts = [];
+  [3, 7].forEach(km => { for (let k = 0; k < 16; k++) { const a = k * 22.5 * Math.PI / 180;
+    pts.push({ b: k * 22.5, w: km === 3 ? 2 : 1, lat: s.lat + Math.cos(a) * km / 110.54, lon: s.lon + Math.sin(a) * km / (111.32 * Math.cos(s.lat * Math.PI / 180)) }); } });
+  let j = await getJSON(`${MAR}?latitude=${pts.map(p => p.lat.toFixed(4)).join(',')}&longitude=${pts.map(p => p.lon.toFixed(4)).join(',')}&hourly=wave_height&forecast_days=1`);
+  if (!Array.isArray(j)) j = [j];
+  let x = 0, y = 0, sea = 0;
+  j.forEach((r, k) => {
+    const h = r && r.hourly && r.hourly.wave_height;
+    if (h && h.some(v => v != null)) { const a = pts[k].b * Math.PI / 180; x += Math.sin(a) * pts[k].w; y += Math.cos(a) * pts[k].w; sea++; }
+  });
+  if (!sea || sea === pts.length || Math.hypot(x, y) < 1) return -1; // tout terre, tout mer ou indécis
+  return (Math.atan2(x, y) * 180 / Math.PI + 360) % 360;
+}
 async function ensureShore(s) {
   const k = shKey(s);
-  if (SHORE[k] != null || !navigator.onLine) return shoreOf(s);
+  // une orientation « inconnue » (-1) est retentée une fois par ouverture de l'appli
+  if ((SHORE[k] != null && !(SHORE[k] < 0 && !SH_RETRY.has(k))) || !navigator.onLine) return shoreOf(s);
+  SH_RETRY.add(k);
   if (SH_PENDING.has(k)) return SH_PENDING.get(k);
   const p = (async () => {
+    let v = null;
     try {
       const j = await overpass(`[out:json][timeout:25];(way["natural"="coastline"](around:4000,${s.lat},${s.lon});way["natural"="water"](around:2500,${s.lat},${s.lon});relation["natural"="water"](around:2500,${s.lat},${s.lon}););out geom;`);
-      SHORE[k] = Math.round(shoreFromElements(s, j.elements || [])); saveShore();
-    } catch (e) { /* on réessaiera plus tard */ }
+      v = Math.round(shoreFromElements(s, j.elements || []));
+    } catch (e) { /* OpenStreetMap indisponible : on passe au secours */ }
+    if (v == null || v < 0) { try { const m = await shoreFromMarine(s); if (m >= 0) v = Math.round(m); else if (v == null) v = m; } catch (e) {} }
+    if (v != null) { SHORE[k] = v; saveShore(); }
     SH_PENDING.delete(k);
     return shoreOf(s);
   })();
@@ -98,7 +119,13 @@ async function ensureShoreArea(map, spots) {
     const j = await overpass(`[out:json][timeout:40];(way["natural"="coastline"](${S},${W},${N},${E});way["natural"="water"](${S},${W},${N},${E}););out geom;`);
     todo.forEach(s => { SHORE[shKey(s)] = Math.round(shoreFromElements(s, j.elements || [])); });
     saveShore(); return true;
-  } catch (e) { SH_AREAS.delete(key); return false; }
+  } catch (e) {
+    // OpenStreetMap indisponible : méthode des vagues pour quelques spots (requêtes limitées)
+    let any = false;
+    for (const s of todo.slice(0, 6)) { try { const m = await shoreFromMarine(s); SHORE[shKey(s)] = Math.round(m); any = true; } catch (x) { break; } }
+    if (any) saveShore();
+    SH_AREAS.delete(key); return any;
+  }
 }
 const sideTag = side => side ? `<span class="sidetag" style="color:${SIDES[side].c}">${side === 'off' ? '⚠ ' : ''}${SIDES[side].l}</span>` : '';
 
