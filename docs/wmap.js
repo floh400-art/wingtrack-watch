@@ -20,8 +20,7 @@ const WM_LAYERS = { wind: 'Vent', gust: 'Rafales', wave: 'Vagues', swell: 'Houle
 
 /* ---------- palettes ---------- */
 // vent : palette PredictWind définie dans meteo.js (WIND_STOPS / WIND_LUT / lut)
-const WAVE_STOPS = [[0, [70, 70, 210]], [0.5, [40, 120, 225]], [1, [30, 175, 200]], [1.5, [40, 190, 90]], [2, [235, 220, 40]], [3, [245, 140, 40]], [4, [215, 25, 40]], [6, [110, 10, 60]]];
-const WAVE_LUT = lut(WAVE_STOPS, 6, 241);
+// vagues : palette PredictWind définie dans meteo.js (WAVE_STOPS / WAVE_LUT)
 const isWave = () => WM.layer === 'wave' || WM.layer === 'swell';
 
 /* ---------- ouverture ---------- */
@@ -69,7 +68,7 @@ function renderWmBars() {
 }
 function renderLegend() {
   if (isWave()) {
-    $('wmLegend').innerHTML = [0, 0.5, 1, 1.5, 2, 3, 4, 5].map(v => `<span style="color:rgb(${[...WAVE_LUT.slice(Math.round(v / 6 * 240) * 3, Math.round(v / 6 * 240) * 3 + 3)]})">${v}</span>`).join('') + '<b>m</b>';
+    $('wmLegend').innerHTML = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => `<span style="color:rgb(${waveRGB(v).join(',')})">${v}</span>`).join('') + '<b>mètres</b>';
     return;
   }
   const marks = { kn: [5, 10, 15, 20, 25, 30, 35, 40, 45, 50], kmh: [10, 20, 30, 40, 50, 60, 70, 80], ms: [3, 5, 8, 10, 13, 15, 20, 25], mph: [5, 10, 15, 20, 30, 40, 50, 60] }[cfg.unit] || [10, 20, 30, 40, 50, 60, 70, 80];
@@ -152,7 +151,7 @@ function sample(lat, lon, t) {
   return { u: u / w, v: v / w, s: s / w, p: wp ? p / wp : null };
 }
 function colorOf(val) {
-  if (isWave()) { const k = Math.max(0, Math.min(240, Math.round(val / 6 * 240))); return [WAVE_LUT[k * 3], WAVE_LUT[k * 3 + 1], WAVE_LUT[k * 3 + 2]]; }
+  if (isWave()) return waveRGB(val);
   const k = Math.max(0, Math.min(550, Math.round(val / KN * 10))); // km/h → dixièmes de nœud
   return [WIND_LUT[k * 3], WIND_LUT[k * 3 + 1], WIND_LUT[k * 3 + 2]];
 }
@@ -237,8 +236,10 @@ function stopPlay() { clearInterval(WM.playing); WM.playing = null; $('wmPlay').
 function wmTap(lat, lon) {
   const s = sample(lat, lon, WM.t); if (!s || !WM.grid) return;
   const dir = (Math.atan2(-s.u, -s.v) * 180 / Math.PI + 360) % 360;
-  const val = isWave() ? `${s.s.toFixed(1)} m${s.p ? ' · ' + Math.round(s.p) + ' s' : ''}` : `${wf(s.s)} ${wUnit()}`;
-  const pop = L.popup({ maxWidth: 240 }).setLatLng([lat, lon]).setContent(`<div class="pop"><b>${WM_LAYERS[WM.layer]} ${val}</b> ${arrow(dir, '#06141f')} ${dirName(dir)}<br><small>${dayLabel(WM.grid.T[WM.t].slice(0, 10))} · ${WM.grid.T[WM.t].slice(11, 16)}</small><br><button class="btn small pri" id="wmGo">Prévisions ici</button> <button class="btn small" id="wmNew">＋ Spot</button></div>`).openOn(WM.map);
+  const val = isWave() ? `${s.s.toFixed(1)} m${s.p ? ' · ' + s.p.toFixed(1) + ' s' : ''}` : `${wf(s.s)} ${wUnit()}`;
+  const dm = v => { const a = Math.abs(v), d = Math.floor(a); return `${d}° ${((a - d) * 60).toFixed(3)}`; };
+  const coords = `${dm(lat)} ${lat >= 0 ? 'N' : 'S'} · ${dm(lon)} ${lon >= 0 ? 'E' : 'O'}`;
+  const pop = L.popup({ maxWidth: 240 }).setLatLng([lat, lon]).setContent(`<div class="pop"><b>${WM_LAYERS[WM.layer]} ${val}</b> ${arrow(dir, '#06141f')} ${dirName(dir)} (${Math.round(dir)}°)<br><small>${dayLabel(WM.grid.T[WM.t].slice(0, 10))} · ${WM.grid.T[WM.t].slice(11, 16)}<br>${coords}</small><br><button class="btn small pri" id="wmGo">Prévisions ici</button> <button class="btn small" id="wmNew">＋ Spot</button></div>`).openOn(WM.map);
   setTimeout(() => {
     const go = document.getElementById('wmGo'), nw = document.getElementById('wmNew');
     if (go) go.onclick = async () => { WM.map.closePopup(); stopPlay(); stopAnim(); show('meteo'); setSpot({ name: (await reverseGeocode(lat, lon)) || `Point ${lat.toFixed(2)}, ${lon.toFixed(2)}`, lat, lon }); };

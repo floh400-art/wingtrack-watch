@@ -35,6 +35,10 @@ function lut(stops, max, steps) {
   return out;
 }
 const WIND_LUT = lut(WIND_STOPS, 55, 551); // pas de 0,1 nœud
+// palette vagues PredictWind (relevée sur leur échelle 1 à 10 m)
+const WAVE_STOPS = [[0, [152, 0, 205]], [0.27, [145, 1, 212]], [0.4, [138, 0, 217]], [0.54, [130, 0, 220]], [0.67, [108, 13, 229]], [0.8, [83, 27, 236]], [0.93, [60, 43, 245]], [1.07, [35, 57, 254]], [1.2, [22, 79, 254]], [1.33, [16, 104, 254]], [1.46, [9, 128, 254]], [1.6, [1, 152, 255]], [1.73, [0, 167, 246]], [1.86, [0, 176, 233]], [1.99, [0, 187, 220]], [2.13, [0, 197, 206]], [2.26, [0, 201, 191]], [2.39, [0, 204, 177]], [2.52, [0, 207, 163]], [2.66, [0, 210, 149]], [2.79, [17, 213, 131]], [2.92, [57, 219, 110]], [3.05, [95, 223, 87]], [3.19, [133, 228, 66]], [3.32, [166, 230, 48]], [3.45, [181, 229, 49]], [3.58, [200, 224, 48]], [3.72, [216, 223, 49]], [3.85, [231, 219, 49]], [3.98, [231, 207, 47]], [4.11, [231, 195, 47]], [4.25, [230, 184, 46]], [4.38, [231, 174, 45]], [4.51, [233, 162, 44]], [4.64, [236, 151, 42]], [4.77, [237, 141, 39]], [4.91, [241, 130, 41]], [5.04, [242, 113, 45]], [5.17, [247, 99, 53]], [5.3, [248, 80, 54]], [5.44, [251, 63, 61]], [5.57, [249, 49, 75]], [5.7, [247, 34, 90]], [5.83, [245, 21, 109]], [5.97, [242, 4, 124]], [6.1, [242, 0, 112]], [6.23, [248, 0, 88]], [6.36, [248, 0, 60]], [6.5, [251, 0, 36]], [6.63, [254, 0, 10]], [6.76, [248, 0, 0]], [6.89, [238, 0, 0]], [7.03, [228, 0, 1]], [7.16, [215, 0, 0]], [7.29, [204, 0, 1]], [7.42, [193, 1, 0]], [7.56, [184, 0, 0]], [7.69, [174, 0, 1]], [7.82, [164, 0, 0]], [7.95, [154, 0, 0]], [8.09, [145, 0, 0]], [8.22, [135, 0, 0]], [8.35, [124, 0, 0]], [8.48, [114, 0, 0]], [8.62, [104, 0, 0]], [8.75, [95, 0, 0]], [8.88, [84, 0, 0]], [9.01, [74, 0, 1]], [9.15, [64, 0, 0]], [9.54, [64, 28, 30]], [9.81, [84, 68, 68]], [10.07, [100, 100, 100]], [12, [100, 100, 100]]];
+const WAVE_LUT = lut(WAVE_STOPS, 12, 1201); // pas de 1 cm
+function waveRGB(m) { const k = Math.max(0, Math.min(1200, Math.round(m * 100))); return [WAVE_LUT[k * 3], WAVE_LUT[k * 3 + 1], WAVE_LUT[k * 3 + 2]]; }
 function windRGB(kmh) { const k = Math.max(0, Math.min(550, Math.round(kmh / KN * 10))); return [WIND_LUT[k * 3], WIND_LUT[k * 3 + 1], WIND_LUT[k * 3 + 2]]; }
 function windColor(kmh) {
   if (kmh == null) return 'transparent';
@@ -554,7 +558,7 @@ function renderModelBar() {
 /* ---------- carte : spots, point touché, flèches façon Windy ---------- */
 const FIELD = { off: 'Off', wind: 'Vent', gust: 'Rafales', wave: 'Vagues', swell: 'Houle' };
 M.field = cfg.meteoField || 'wind';
-function waveColor(m) { return m == null ? 'transparent' : m < 0.5 ? '#1d3b52' : m < 1 ? '#2f6f8f' : m < 1.5 ? '#2bb39a' : m < 2 ? '#7ccf3c' : m < 2.5 ? '#e6d23a' : m < 3.5 ? '#f39c34' : '#ec4b4b'; }
+function waveColor(m) { return m == null ? 'transparent' : 'rgb(' + waveRGB(m).join(',') + ')'; }
 function showSpotMap() {
   if (!window.L) return;
   if (!M.map) {
@@ -662,7 +666,7 @@ function drawField() {
       v = p.h.swell_wave_height[i]; d = p.h.swell_wave_direction[i]; if (v == null) return;
       col = waveColor(v); txt = v.toFixed(1); sub = p.h.swell_wave_period[i] == null ? '' : Math.round(p.h.swell_wave_period[i]) + 's';
     }
-    const tc = (M.field === 'wind' || M.field === 'gust') ? windTxt(v) : (v >= 1.5 && v < 3.5 ? '#06141f' : '#fff');
+    const tc = (M.field === 'wind' || M.field === 'gust') ? windTxt(v) : (v >= 0.9 && v < 4.6 ? '#06141f' : '#fff');
     const icon = L.divIcon({ className: '', html: `<div class="fa" style="--c:${col};--t:${tc}">${d == null ? '<b>•</b>' : `<svg viewBox="0 0 24 24" style="transform:rotate(${d + 180}deg)"><path d="M12 2l7 10h-4.5v10h-5V12H5z"/></svg>`}<i>${txt}${sub ? '<small>' + sub + '</small>' : ''}</i></div>`, iconSize: [40, 44], iconAnchor: [20, 22] });
     L.marker([p.lat, p.lon], { icon, interactive: false, zIndexOffset: -100 }).addTo(M.fieldLayer);
   });
