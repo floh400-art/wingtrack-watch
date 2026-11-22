@@ -271,6 +271,9 @@ table.fc td.shcell{padding:4px 2px}table.fc td.shcell small{font-weight:800;font
 .wmbtn.off{opacity:.45}
 .cmleg{display:flex;justify-content:space-between;margin-top:6px;font-weight:800;font-size:12px;background:#555;border-radius:8px;padding:2px 8px}
 .cmleg b{color:#fff;font-size:10px}
+.cmmods{display:flex;gap:5px;margin-top:6px;overflow-x:auto;scrollbar-width:none}.cmmods::-webkit-scrollbar{display:none}
+.cmmods button{flex:none;border:1.5px solid var(--mc);background:transparent;color:#fff;border-radius:12px;padding:3px 9px;font-size:12px;font-weight:700}
+.cmmods button.on{background:var(--mc);color:#06141f}
 </style>
 </head>
 <body>
@@ -380,7 +383,7 @@ table.fc td.shcell{padding:4px 2px}table.fc td.shcell small{font-weight:800;font
 <section id="carte" class="view">
   <div id="cmMap"></div>
   <div class="cmtop">
-    <div class="cmtitle"><b>Spots</b><span id="cmCount">Chargement des spots…</span><div class="cmleg" id="cmLeg"></div></div>
+    <div class="cmtitle"><b>Spots</b><span id="cmCount">Chargement des spots…</span><div class="cmleg" id="cmLeg"></div><div class="cmmods" id="cmModels"></div></div>
     <div class="cmbtns"><button class="wmbtn loc" id="cmLocalBtn" title="Spots autour de moi">Local</button><button class="wmbtn" id="cmSearch" title="Chercher">🔍</button><button class="wmbtn" id="cmHere" title="Ma position">📍</button><button class="wmbtn" id="cmBaseBtn" title="Fond de carte">🗺️</button><button class="wmbtn" id="cmStaBtn" title="Balises de vent en direct">🌀</button><button class="wmbtn" id="cmFieldBtn" title="Vent animé">🌬️</button></div>
   </div>
   <div class="cmlocal" id="cmLocal">

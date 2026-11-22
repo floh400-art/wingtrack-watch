@@ -160,7 +160,7 @@ async function loadGridInner() {
   const rows = r1 - r0 + 1, cols = c1 - c0 + 1;
   const kind = isWave() ? 'marine' : 'wind|' + WM.model;
   const pk = (r, c) => `${kind}|${step}|${r}|${c}`;
-  const g = { s: r0 * step, n: r1 * step, w: c0 * step, e: c1 * step, cols, rows, layer: WM.layer, model: WM.model, step };
+  const g = { s: r0 * step, N: r1 * step, w: c0 * step, e: c1 * step, cols, rows, layer: WM.layer, model: WM.model, step };
   const key = [WM.layer, kind, step, r0, r1, c0, c1].join('|');
   // points manquants (ou de plus d'une heure)
   const need = [];
@@ -223,7 +223,7 @@ async function loadGridInner() {
 /* ---------- interpolation ---------- */
 function sample(lat, lon, t) {
   const g = WM.grid; if (!g) return null;
-  const fx = (lon - g.w) / (g.e - g.w) * (g.cols - 1), fy = (lat - g.s) / (g.n - g.s) * (g.rows - 1);
+  const fx = (lon - g.w) / (g.e - g.w) * (g.cols - 1), fy = (lat - g.s) / (g.N - g.s) * (g.rows - 1);
   if (fx < 0 || fy < 0 || fx > g.cols - 1 || fy > g.rows - 1) return null;
   const x0 = Math.min(g.cols - 2, Math.floor(fx)), y0 = Math.min(g.rows - 2, Math.floor(fy)), dx = fx - x0, dy = fy - y0;
   const base = t * g.n;
@@ -286,7 +286,7 @@ function applyHeatOpacity() {
 /* ---------- isobares + centres H / L ---------- */
 function sampleP(lat, lon, t) {
   const g = WM.grid;
-  const fx = (lon - g.w) / (g.e - g.w) * (g.cols - 1), fy = (lat - g.s) / (g.n - g.s) * (g.rows - 1);
+  const fx = (lon - g.w) / (g.e - g.w) * (g.cols - 1), fy = (lat - g.s) / (g.N - g.s) * (g.rows - 1);
   if (fx < 0 || fy < 0 || fx > g.cols - 1 || fy > g.rows - 1) return NaN;
   const x0 = Math.min(g.cols - 2, Math.floor(fx)), y0 = Math.min(g.rows - 2, Math.floor(fy)), dx = fx - x0, dy = fy - y0, b = t * g.n;
   const v = (x, y) => g.PR[b + y * g.cols + x];
@@ -330,7 +330,7 @@ function drawIsobars(c, W, H) {
       if (w >= v) isMax = false; if (w <= v) isMin = false;
     }
     if (!isMax && !isMin) continue;
-    const lat = g.s + r * (g.n - g.s) / (g.rows - 1), lon = g.w + q * (g.e - g.w) / (g.cols - 1);
+    const lat = g.s + r * (g.N - g.s) / (g.rows - 1), lon = g.w + q * (g.e - g.w) / (g.cols - 1);
     const p = WM.map.latLngToContainerPoint([lat, lon]);
     if (p.x < 0 || p.y < 0 || p.x > W || p.y > H) continue;
     c.fillStyle = isMin ? '#ff5d6c' : '#3b82f6'; c.beginPath(); c.arc(p.x, p.y, 13, 0, 7); c.fill();

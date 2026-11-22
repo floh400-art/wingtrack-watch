@@ -33,8 +33,20 @@ function openCarte() {
   // les spots de session pour la carte
   DB.all().then(all => { M.sessionSpots = groupSpots(all).map(sp => ({ name: sp.name, lat: sp.c[0], lon: sp.c[1] })); cmDraw(); }).catch(() => {});
   cmPaintTime(); $('cmOnly').classList.toggle('on', CM.onlyOk);
-  if (CM.field) { CM.field.setTime(cmTime()); CM.field.setOn(cfg.cmField !== false); }
+  cmModels();
+  if (CM.field) { CM.field.model = cfg.cmModel || 'meteofrance_seamless'; CM.field.setTime(cmTime()); CM.field.setOn(cfg.cmField !== false); }
   $('cmFieldBtn').classList.toggle('off', cfg.cmField === false); cmLegend();
+}
+/* ---------- un seul modèle à la fois (vignettes en haut) ---------- */
+function cmModels() {
+  const cur = cfg.cmModel || 'meteofrance_seamless';
+  $('cmModels').innerHTML = MODELS.filter(m => m.id !== 'avg').map(m => `<button class="${m.id === cur ? 'on' : ''}" data-m="${m.id}" style="--mc:${MCOL[m.id]}">${m.name}</button>`).join('');
+  document.querySelectorAll('#cmModels button').forEach(b => b.onclick = () => {
+    if (b.dataset.m === (cfg.cmModel || 'meteofrance_seamless')) return;
+    cfg.cmModel = b.dataset.m; saveCfg(); cmModels();
+    if (CM.field) CM.field.setModel(cfg.cmModel);
+    cmDraw(); toast('Modèle : ' + b.textContent);
+  });
 }
 function cmLegend() {
   const on = cfg.cmField !== false;

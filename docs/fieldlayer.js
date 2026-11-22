@@ -14,6 +14,7 @@ class WindField {
     map.on('movestart', () => { this.moving = true; const c = this.part.getContext('2d'); c.clearRect(0, 0, this.part.width, this.part.height); });
     map.on('moveend', () => { this.moving = false; this.heat.style.visibility = ''; if (!this.on) return; this.place(); this.drawHeat(); this.resetParts(); clearTimeout(this.lt); this.lt = setTimeout(() => this.load(), 600); });
   }
+  setModel(m) { if (m === this.model) return; this.model = m; this.grid = null; this.drawHeat(); this.part.getContext('2d').clearRect(0, 0, this.part.width, this.part.height); this.load(); }
   setOn(b) {
     this.on = b;
     this.heat.style.display = this.part.style.display = b ? '' : 'none';
@@ -36,22 +37,28 @@ class WindField {
   }
   ll(x, y) { const lr = this.latRow, yi = Math.max(0, Math.min(lr.length - 1, y | 0)); return [lr[yi], this.lng0 + x * this.dLng]; }
   async load() {
-    if (!this.on || this.busy) return;
+    if (!this.on) return;
+    if (this.busy) { this.again = true; return; }
     this.busy = true;
     try {
       const b = this.map.getBounds(), z = this.map.getZoom();
       const target = 46 / (256 * Math.pow(2, z) / 360);
       const S0 = b.getSouth(), N0 = b.getNorth(), W0 = b.getWest(), E0 = b.getEast();
-      let step = LADDER.find(d => d >= Math.max(0.1, target)) || 3;
+      // grilles emboîtées (chaque pas = 2 × le précédent) : en dézoomant on garde exactement
+      // les mêmes points que de près, donc les mêmes valeurs → mêmes couleurs
+      const NEST = [0.025, 0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2], model = this.model || 'meteofrance_seamless';
+      const minStep = { meteofrance_seamless: 0.025, icon_seamless: 0.05, ukmo_seamless: 0.1, ecmwf_ifs025: 0.2, gfs_seamless: 0.2 }[model] || 0.1;
+      let step = NEST.find(d => d >= Math.max(minStep, target)) || 3.2;
       const count = d => (Math.floor((N0 - S0) / d) + 3) * (Math.floor((E0 - W0) / d) + 3);
-      while (count(step) > 400 && LADDER.indexOf(step) < LADDER.length - 1) step = LADDER[LADDER.indexOf(step) + 1];
+      while (count(step) > 400 && NEST.indexOf(step) < NEST.length - 1) step = NEST[NEST.indexOf(step) + 1];
       const r0 = Math.floor(S0 / step) - 1, r1 = Math.ceil(N0 / step) + 1, c0 = Math.floor(W0 / step) - 1, c1 = Math.ceil(E0 / step) + 1;
-      const pk = (r, c) => `wind|best|${step}|${r}|${c}`;
+      const pk = (r, c) => `cm|${model}|${step}|${r}|${c}`;
       const need = [];
       for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) { const v = WM_PTS.get(pk(r, c)); if (!v || Date.now() - v.at > 3600e3) need.push([r, c]); }
       for (let i = 0; i < need.length; i += 100) {
         const part = need.slice(i, i + 100);
-        let j = await getJSON(`${OM}?latitude=${part.map(([r]) => (r * step).toFixed(3)).join(',')}&longitude=${part.map(([, c]) => (c * step).toFixed(3)).join(',')}&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m,pressure_msl&forecast_days=7&timezone=GMT`);
+        let j = await getJSON(`${OM}?latitude=${part.map(([r]) => (r * step).toFixed(3)).join(',')}&longitude=${part.map(([, c]) => (c * step).toFixed(3)).join(',')}&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m,pressure_msl&forecast_days=7&timezone=GMT&models=${model}`);
+        if (model !== (this.model || 'meteofrance_seamless')) return; // modèle changé entre-temps
         if (!Array.isArray(j)) j = [j];
         j.forEach((x, k) => WM_PTS.set(pk(part[k][0], part[k][1]), { at: Date.now(), h: x && x.hourly }));
       }
@@ -71,16 +78,16 @@ class WindField {
           const a = d * Math.PI / 180, i = t * n + k; U[i] = -Math.sin(a) * w / 3.6; V[i] = -Math.cos(a) * w / 3.6; S[i] = w;
         }
       }
-      this.grid = { s: r0 * step, n: r1 * step, w: c0 * step, e: c1 * step, rows, cols, n, T, nT, U, V, S };
+      this.grid = { s: r0 * step, N: r1 * step, w: c0 * step, e: c1 * step, rows, cols, n, T, nT, U, V, S };
       const i = this.tStr ? T.indexOf(this.tStr) : -1;
       this.t = i >= 0 ? i : Math.max(0, T.indexOf(new Date(Date.now() + off).toISOString().slice(0, 13) + ':00'));
       this.place(); this.drawHeat(); this.resetParts();
     } catch (e) { /* hors ligne ou limite atteinte : on réessaiera au prochain déplacement */ }
-    finally { this.busy = false; }
+    finally { this.busy = false; if (this.again) { this.again = false; this.load(); } }
   }
   sample(lat, lon) {
     const g = this.grid; if (!g) return null;
-    const fx = (lon - g.w) / (g.e - g.w) * (g.cols - 1), fy = (lat - g.s) / (g.n - g.s) * (g.rows - 1);
+    const fx = (lon - g.w) / (g.e - g.w) * (g.cols - 1), fy = (lat - g.s) / (g.N - g.s) * (g.rows - 1);
     if (fx < 0 || fy < 0 || fx > g.cols - 1 || fy > g.rows - 1) return null;
     const x0 = Math.min(g.cols - 2, Math.floor(fx)), y0 = Math.min(g.rows - 2, Math.floor(fy)), dx = fx - x0, dy = fy - y0, base = this.t * g.n + y0 * g.cols + x0;
     const I = [base, base + 1, base + g.cols, base + g.cols + 1], K = this._k || (this._k = new Float64Array(4));

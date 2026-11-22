@@ -143,7 +143,8 @@ function bindRes(items) {
 
 /* ---------- conditions de vent par spot (vert / orange / noir) ---------- */
 const COND = new Map(); // clé lat,lon → { at, off, time, ws, wg, wd }
-const ckey = s => s.lat.toFixed(3) + ',' + s.lon.toFixed(3);
+const condModel = () => cfg.cmModel || 'meteofrance_seamless'; // même modèle que le vent animé de la Carte
+const ckey = s => condModel() + '|' + s.lat.toFixed(3) + ',' + s.lon.toFixed(3);
 let condBusy = false;
 async function fetchCond(spots) {
   const need = spots.filter(s => { const c = COND.get(ckey(s)); return !c || Date.now() - c.at > 45 * 60e3; });
@@ -152,7 +153,7 @@ async function fetchCond(spots) {
   try {
     for (let i = 0; i < need.length; i += 50) {
       const part = need.slice(i, i + 50);
-      let j = await getJSON(`${OM}?latitude=${part.map(s => s.lat.toFixed(3)).join(',')}&longitude=${part.map(s => s.lon.toFixed(3)).join(',')}&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m&forecast_days=7&timezone=auto`);
+      let j = await getJSON(`${OM}?latitude=${part.map(s => s.lat.toFixed(3)).join(',')}&longitude=${part.map(s => s.lon.toFixed(3)).join(',')}&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m&forecast_days=7&timezone=auto&models=${condModel()}`);
       if (!Array.isArray(j)) j = [j];
       j.forEach((x, k) => { if (x && x.hourly) COND.set(ckey(part[k]), { at: Date.now(), off: x.utc_offset_seconds || 0, time: x.hourly.time, ws: x.hourly.wind_speed_10m, wg: x.hourly.wind_gusts_10m, wd: x.hourly.wind_direction_10m }); });
     }
