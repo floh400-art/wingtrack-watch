@@ -351,7 +351,13 @@ function drawChart(cursorIdx) {
     const x = X(T[cursorIdx]);
     c.strokeStyle = '#fff'; c.beginPath(); c.moveTo(x, pad.t); c.lineTo(x, pad.t + h); c.stroke();
     c.fillStyle = '#fff'; c.beginPath(); c.arc(x, Y(V[cursorIdx]), 4, 0, 7); c.fill();
-    $('scrub').textContent = `${ft(T[cursorIdx])} · ${fs(V[cursorIdx])} ${uLabel()}`;
+    const tc = T[cursorIdx];
+    const run = st.runList.find(r => tc >= r.t0 && tc <= r.t0 + r.dur);
+    const near = det.ev.filter(e => Math.abs(e.t - tc) <= 4).sort((p, q) => Math.abs(p.t - tc) - Math.abs(q.t - tc))[0];
+    const lines = [`${ft(tc)}  ·  ${fs(V[cursorIdx])} ${uLabel()}`, `${run ? 'Sur le foil' : 'Dans l\'eau'}  ·  ${fd(st.C[cursorIdx])} parcourus`];
+    if (near) lines.push(EV[near.type].l + (near.type === 'accel' ? ` +${fs(near.gain, 0)} ${uLabel()}` : near.foiled === true ? ' foilé' : near.foiled === false ? ' (touché l\'eau)' : ''));
+    bubble(c, x, Y(V[cursorIdx]), lines, W, H);
+    $('scrub').textContent = lines.join(' · ');
     if (det.map) {
       const p = det.st.pts[cursorIdx];
       if (!det.cursor) { det.cursor = L.circleMarker([p[1], p[2]], { radius: 8, color: '#fff', weight: 3, fillColor: '#06141f', fillOpacity: 1 }).addTo(det.map); det.layers.push(det.cursor); }
@@ -369,48 +375,94 @@ function chartScrub(ev) {
 }
 $('chart').addEventListener('pointerdown', e => { $('chart').setPointerCapture(e.pointerId); chartScrub(e); });
 $('chart').addEventListener('pointermove', e => { if (e.buttons || e.pointerType === 'touch') chartScrub(e); });
-function drawHist() {
+// infobulle dessinée dans le graphique
+function bubble(c, x, y, lines, W, H) {
+  c.font = 'bold 11px system-ui';
+  const w = Math.max(...lines.map(l => c.measureText(l).width)) + 16, h = lines.length * 15 + 8;
+  let bx = x + 12, by = y - h - 8;
+  if (bx + w > W - 4) bx = x - w - 12;
+  if (bx < 4) bx = 4;
+  if (by < 4) by = Math.min(H - h - 4, y + 12);
+  c.fillStyle = 'rgba(6,20,31,.94)'; c.strokeStyle = '#22d3c5';
+  c.beginPath(); if (c.roundRect) c.roundRect(bx, by, w, h, 8); else c.rect(bx, by, w, h); c.fill(); c.stroke();
+  c.fillStyle = '#e8f3f8'; c.textAlign = 'left';
+  lines.forEach((l, k) => { c.font = (k === 0 ? 'bold ' : '') + '11px system-ui'; c.fillText(l, bx + 8, by + 16 + k * 15); });
+  c.font = '10px system-ui';
+}
+function onTouchChart(id, fn) {
+  const cv = $(id);
+  const go = e => { const r = cv.getBoundingClientRect(); fn(e.clientX - r.left, e.clientY - r.top); };
+  cv.addEventListener('pointerdown', e => { try { cv.setPointerCapture(e.pointerId); } catch (x) {} go(e); });
+  cv.addEventListener('pointermove', e => { if (e.buttons || e.pointerType === 'touch') go(e); });
+}
+let histGeom = null;
+function drawHist(sel = -1) {
   const st = det.st; const { c, W, H } = prep('hist');
   const T = st.T, V = st.V; if (!T || T.length < 3) return;
   const bins = [];
   for (let i = 1; i < T.length; i++) { const dt = T[i] - T[i - 1]; if (dt > 30) continue; const b = Math.floor(spd(V[i]) / 5); bins[b] = (bins[b] || 0) + dt; }
   const nb = bins.length, total = bins.reduce((a, b) => a + (b || 0), 0) || 1, mx = Math.max(...bins.map(b => b || 0));
   const pad = { l: 8, r: 8, t: 16, b: 20 }, w = W - pad.l - pad.r, h = H - pad.t - pad.b, bw = w / nb;
+  histGeom = { pad, bw, nb };
   for (let b = 0; b < nb; b++) {
     const val = bins[b] || 0, bh = val / mx * h, x = pad.l + b * bw;
     c.fillStyle = (b * 5) >= spd(cfg.foil / 3.6) ? '#22d3c5' : '#3b5a6e';
-    c.fillRect(x + 2, pad.t + h - bh, bw - 4, bh);
+    if (sel >= 0 && sel !== b) c.globalAlpha = .45;
+    c.fillRect(x + 2, pad.t + h - bh, bw - 4, bh); c.globalAlpha = 1;
     c.fillStyle = '#86a6b8'; c.textAlign = 'center';
     c.fillText(b * 5, x + bw / 2, H - 6);
-    if (val / total >= 0.03) { c.fillStyle = '#e8f3f8'; c.fillText(Math.round(val / total * 100) + '%', x + bw / 2, pad.t + h - bh - 4); }
+    if (sel < 0 && val / total >= 0.03) { c.fillStyle = '#e8f3f8'; c.fillText(Math.round(val / total * 100) + '%', x + bw / 2, pad.t + h - bh - 4); }
   }
   c.textAlign = 'left';
+  if (sel >= 0 && sel < nb) {
+    const val = bins[sel] || 0, x = pad.l + sel * bw + bw / 2, y = pad.t + h - val / mx * h;
+    const lines = [`${sel * 5} à ${sel * 5 + 5} ${uLabel()}`, `${ft(val)} · ${Math.round(val / total * 100)} % du temps`];
+    bubble(c, x, y, lines, W, H); $('histInfo').textContent = lines.join(' · ');
+  } else $('histInfo').textContent = 'Touche une barre pour le détail';
 }
-function drawRuns() {
+onTouchChart('hist', x => { if (!histGeom || !det.st) return; drawHist(Math.max(0, Math.min(histGeom.nb - 1, Math.floor((x - histGeom.pad.l) / histGeom.bw)))); });
+
+let runsGeom = null, runLayer = null;
+function drawRuns(sel = -1) {
   const st = det.st; const { c, W, H } = prep('runs');
   const R = st.runList;
-  if (!R.length) { c.fillStyle = '#86a6b8'; c.fillText('Aucun vol de plus de 10 s', 10, H / 2); return; }
+  if (!R.length) { c.fillStyle = '#86a6b8'; c.fillText('Aucun vol de plus de 10 s', 10, H / 2); $('runsInfo').textContent = ''; runsGeom = null; return; }
   const pad = { l: 30, r: 8, t: 18, b: 18 }, w = W - pad.l - pad.r, h = H - pad.t - pad.b;
   const mx = Math.max(...R.map(r => r.dur)), bw = w / R.length, vtop = Math.max(...R.map(r => r.vmax));
+  runsGeom = { pad, bw, n: R.length };
   c.fillStyle = '#86a6b8';
   [0, mx / 2, mx].forEach(v => { const y = pad.t + h - v / mx * h; c.fillText(ft(v), 2, y + 3); c.strokeStyle = '#183a50'; c.beginPath(); c.moveTo(pad.l, y); c.lineTo(W - pad.r, y); c.stroke(); });
   R.forEach((r, k) => {
     const x = pad.l + k * bw, bh = r.dur / mx * h;
     c.fillStyle = speedColor(r.avg, Math.max(vtop, 20 / 3.6));
-    c.fillRect(x + Math.min(3, bw * .15), pad.t + h - bh, Math.max(2, bw - Math.min(6, bw * .3)), bh);
-    if (bw > 22) { c.fillStyle = '#e8f3f8'; c.textAlign = 'center'; c.fillText(fs(r.vmax, 0), x + bw / 2, pad.t + h - bh - 4); }
+    if (sel >= 0 && sel !== k) c.globalAlpha = .4;
+    c.fillRect(x + Math.min(3, bw * .15), pad.t + h - bh, Math.max(2, bw - Math.min(6, bw * .3)), bh); c.globalAlpha = 1;
+    if (sel < 0 && bw > 22) { c.fillStyle = '#e8f3f8'; c.textAlign = 'center'; c.fillText(fs(r.vmax, 0), x + bw / 2, pad.t + h - bh - 4); }
     if (bw > 14) { c.fillStyle = '#86a6b8'; c.textAlign = 'center'; c.fillText(k + 1, x + bw / 2, H - 5); }
   });
   c.textAlign = 'left';
+  if (sel >= 0) {
+    const r = R[sel], x = pad.l + sel * bw + bw / 2, y = pad.t + h - r.dur / mx * h;
+    const lines = [`Vol ${sel + 1} · départ à ${ft(r.t0)}`, `${ft(r.dur)} · ${fd(r.dist)}`, `max ${fs(r.vmax)} · moy ${fs(r.avg)} ${uLabel()}`];
+    bubble(c, x, y, lines, W, H); $('runsInfo').textContent = lines.join(' · ') + ' — tracé en blanc sur la carte';
+    if (det.map) {
+      if (runLayer) runLayer.remove();
+      runLayer = L.polyline(st.pts.slice(r.i, r.j + 1).map(p => [p[1], p[2]]), { color: '#fff', weight: 7, opacity: .85 }).addTo(det.map);
+      det.layers.push(runLayer);
+      det.map.fitBounds(runLayer.getBounds(), { padding: [30, 30] });
+    }
+  } else $('runsInfo').textContent = 'Touche un vol pour le voir sur la carte';
 }
-function drawPolar() {
+onTouchChart('runs', x => { if (!runsGeom || !det.st) return; drawRuns(Math.max(0, Math.min(runsGeom.n - 1, Math.floor((x - runsGeom.pad.l) / runsGeom.bw)))); });
+
+let polarGeom = null;
+function drawPolar(sel = -1) {
   const st = det.st; const { c, W, H } = prep('polar');
-  if (!st.polar || !st.polar.some(v => v > 0)) { c.fillStyle = '#86a6b8'; c.fillText('Pas assez de données pour la polaire', 10, H / 2); return; }
-  // vent en haut ; angle au vent a : 0° = face au vent, 180° = vent arrière ; bâbord à gauche, tribord à droite (symétrique)
+  if (!st.polar || !st.polar.some(v => v > 0)) { c.fillStyle = '#86a6b8'; c.fillText('Pas assez de données pour la polaire', 10, H / 2); polarGeom = null; return; }
   const cx = W / 2, cy = H / 2 + 6, R = Math.min(W / 2, H / 2) - 18;
   const mx = spd(Math.max(...st.polar, 20 / 3.6)), step = mx > 40 ? 10 : 5, top = Math.ceil(mx / step) * step;
+  polarGeom = { cx, cy };
   const P = (a, r, sg) => [cx + sg * Math.sin(a * Math.PI / 180) * r, cy - Math.cos(a * Math.PI / 180) * r];
-  // zone face au vent
   c.fillStyle = 'rgba(255,93,108,.12)'; c.beginPath(); c.moveTo(cx, cy);
   c.arc(cx, cy, R, -Math.PI / 2 - Math.PI / 4, -Math.PI / 2 + Math.PI / 4); c.closePath(); c.fill();
   c.strokeStyle = '#183a50'; c.fillStyle = '#86a6b8';
@@ -425,7 +477,22 @@ function drawPolar() {
   c.fillStyle = '#e8f3f8'; c.textAlign = 'center';
   c.fillText('▼ vent', cx, 10); c.fillText('vent arrière', cx, H - 2);
   c.textAlign = 'left'; c.fillText('travers', 2, cy - 3); c.textAlign = 'right'; c.fillText('travers', W - 2, cy - 3); c.textAlign = 'left';
+  if (sel && sel !== -1) {
+    const b = sel.b, side = sel.side, v = st.polar[b] || 0, a = b * 10 + 5;
+    const [x, y] = P(a, spd(v) / top * R, side);
+    c.strokeStyle = '#fff'; c.setLineDash([3, 3]); c.beginPath(); c.moveTo(cx, cy); c.lineTo(...P(a, R, side)); c.stroke(); c.setLineDash([]);
+    c.fillStyle = '#fff'; c.beginPath(); c.arc(x, y, 4.5, 0, 7); c.fill();
+    const allure = a < 45 ? 'face au vent' : a < 70 ? 'près' : a < 110 ? 'travers' : a < 160 ? 'grand largue' : 'vent arrière';
+    const lines = [`${b * 10}–${b * 10 + 10}° du vent (${allure})`, v ? `max ${fs(v)} ${uLabel()}` : 'pas navigué à cet angle'];
+    bubble(c, x, y, lines, W, H); $('polarInfo').textContent = lines.join(' · ');
+  } else $('polarInfo').textContent = 'Touche la polaire pour voir ta vitesse max à un angle donné';
 }
+onTouchChart('polar', (x, y) => {
+  if (!polarGeom || !det.st) return;
+  const dx = x - polarGeom.cx, dy = y - polarGeom.cy;
+  const a = Math.abs(Math.atan2(dx, -dy) * 180 / Math.PI);
+  drawPolar({ b: Math.min(17, Math.floor(a / 10)), side: dx < 0 ? -1 : 1 });
+});
 $('bWind').onclick = async () => {
   const s = det.s; s.windFlip = !s.windFlip; s.sum = summarize(s.pts, s.windFlip); await DB.put(s);
   det.st = statsFor(s); renderDetail(); toast('Jibes et tacks recalculés');

@@ -77,6 +77,7 @@ input[type=text],input[type=number]{width:100%;padding:12px;border-radius:12px;b
 .legend .bar{flex:1;height:6px;margin:4px 8px;border-radius:3px;background:linear-gradient(90deg,#3b82f6,#22d3c5,#a3e635,#ffb84d,#ff5d6c)}
 .leaflet-container{font:inherit}
 canvas.cv{width:100%;display:block;background:var(--card);border:1px solid var(--line);border-radius:14px;touch-action:pan-y}
+.cap.tip,#scrub{color:var(--txt);font-weight:600;min-height:17px}
 .cap{font-size:12px;color:var(--mut);margin:6px 2px 0;line-height:1.4}
 .mlegend{display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:var(--mut);margin-top:8px}
 .mlegend i,.mk,.evs{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-style:normal;font-size:10px;font-weight:800;color:#06141f;margin-right:4px}
@@ -145,12 +146,15 @@ canvas.cv{width:100%;display:block;background:var(--card);border:1px solid var(-
   <div id="dEvents" class="evlist"></div>
   <h2>Vols sur le foil</h2>
   <canvas id="runs" class="cv" style="height:170px"></canvas>
+  <p class="cap tip" id="runsInfo"></p>
   <p class="cap">Un vol = du décollage au retour dans l'eau · hauteur = durée · chiffre = vitesse max · couleur = vitesse moyenne</p>
   <h2>Temps passé par vitesse</h2>
   <canvas id="hist" class="cv" style="height:160px"></canvas>
+  <p class="cap tip" id="histInfo"></p>
   <p class="cap">Tranches de 5 <span class="uL">km/h</span> · en couleur : au-dessus du seuil foil</p>
   <h2>Polaire</h2>
   <canvas id="polar" class="cv" style="height:280px"></canvas>
+  <p class="cap tip" id="polarInfo"></p>
   <p class="cap">Vitesse max selon ton angle par rapport au vent (zone rouge : face au vent)</p>
   <h2>Session</h2>
   <div class="grid g3" id="dSess"></div>
