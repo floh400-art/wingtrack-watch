@@ -42,7 +42,7 @@ class WindField {
     this.busy = true;
     try {
       const b = this.map.getBounds(), z = this.map.getZoom();
-      const target = 80 / (256 * Math.pow(2, z) / 360); // ~1 point tous les 80 px : léger pour la limite gratuite Open-Meteo
+      const target = 120 / (256 * Math.pow(2, z) / 360); // peu de points demandés (≈ 40 par écran), le reste est comblé par interpolation douce
       const S0 = b.getSouth(), N0 = b.getNorth(), W0 = b.getWest(), E0 = b.getEast();
       // grilles emboîtées (chaque pas = 2 × le précédent) : en dézoomant on garde exactement
       // les mêmes points que de près, donc les mêmes valeurs → mêmes couleurs
@@ -50,7 +50,7 @@ class WindField {
       const minStep = { meteofrance_seamless: 0.025, icon_seamless: 0.05, ukmo_seamless: 0.1, ecmwf_ifs025: 0.2, gfs_seamless: 0.2 }[model] || 0.1;
       let step = NEST.find(d => d >= Math.max(minStep, target)) || 3.2;
       const count = d => (Math.floor((N0 - S0) / d) + 3) * (Math.floor((E0 - W0) / d) + 3);
-      while (count(step) > 170 && NEST.indexOf(step) < NEST.length - 1) step = NEST[NEST.indexOf(step) + 1];
+      while (count(step) > 70 && NEST.indexOf(step) < NEST.length - 1) step = NEST[NEST.indexOf(step) + 1];
       const r0 = Math.floor(S0 / step) - 1, r1 = Math.ceil(N0 / step) + 1, c0 = Math.floor(W0 / step) - 1, c1 = Math.ceil(E0 / step) + 1;
       const pk = (r, c) => `cm|${model}|${step}|${r}|${c}`;
       const need = [];
@@ -110,16 +110,30 @@ class WindField {
     }
     finally { this.busy = false; if (this.again) { this.again = false; this.load(); } }
   }
+  // interpolation bicubique (Catmull-Rom) : comble en douceur entre des points espacés
   sample(lat, lon) {
     const g = this.grid; if (!g) return null;
     const fx = (lon - g.w) / (g.e - g.w) * (g.cols - 1), fy = (lat - g.s) / (g.N - g.s) * (g.rows - 1);
     if (fx < 0 || fy < 0 || fx > g.cols - 1 || fy > g.rows - 1) return null;
-    const x0 = Math.min(g.cols - 2, Math.floor(fx)), y0 = Math.min(g.rows - 2, Math.floor(fy)), dx = fx - x0, dy = fy - y0, base = this.t * g.n + y0 * g.cols + x0;
-    const I = [base, base + 1, base + g.cols, base + g.cols + 1], K = this._k || (this._k = new Float64Array(4));
-    K[0] = (1 - dx) * (1 - dy); K[1] = dx * (1 - dy); K[2] = (1 - dx) * dy; K[3] = dx * dy;
-    let u = 0, v = 0, s = 0, w = 0;
-    for (let j = 0; j < 4; j++) { const i = I[j], k = K[j]; if (!k || isNaN(g.S[i])) continue; u += g.U[i] * k; v += g.V[i] * k; s += g.S[i] * k; w += k; }
-    return w < 0.25 ? null : { u: u / w, v: v / w, s: s / w };
+    const x0 = Math.min(g.cols - 2, Math.floor(fx)), y0 = Math.min(g.rows - 2, Math.floor(fy)), dx = fx - x0, dy = fy - y0, T = this.t * g.n;
+    const wx = this._wx || (this._wx = new Float64Array(4)), wy = this._wy || (this._wy = new Float64Array(4));
+    const cr = (t, o) => { const t2 = t * t, t3 = t2 * t; o[0] = -0.5 * t3 + t2 - 0.5 * t; o[1] = 1.5 * t3 - 2.5 * t2 + 1; o[2] = -1.5 * t3 + 2 * t2 + 0.5 * t; o[3] = 0.5 * t3 - 0.5 * t2; };
+    cr(dx, wx); cr(dy, wy);
+    let u = 0, v = 0, sp = 0, ok = true;
+    for (let j = 0; j < 4 && ok; j++) {
+      const yy = Math.max(0, Math.min(g.rows - 1, y0 - 1 + j));
+      for (let i = 0; i < 4; i++) {
+        const xx = Math.max(0, Math.min(g.cols - 1, x0 - 1 + i)), id = T + yy * g.cols + xx, k = wx[i] * wy[j];
+        if (isNaN(g.S[id])) { ok = false; break; }
+        u += g.U[id] * k; v += g.V[id] * k; sp += g.S[id] * k;
+      }
+    }
+    if (ok) return { u, v, s: Math.max(0, sp) };
+    // trou dans les données (mer/terre, bord) : simple bilinéaire sur les points valides
+    const base = T + y0 * g.cols + x0, I = [base, base + 1, base + g.cols, base + g.cols + 1], K = [(1 - dx) * (1 - dy), dx * (1 - dy), (1 - dx) * dy, dx * dy];
+    let w = 0; u = v = sp = 0;
+    for (let j = 0; j < 4; j++) { const i = I[j], k = K[j]; if (!k || isNaN(g.S[i])) continue; u += g.U[i] * k; v += g.V[i] * k; sp += g.S[i] * k; w += k; }
+    return w < 0.25 ? null : { u: u / w, v: v / w, s: sp / w };
   }
   drawHeat() {
     if (!this.on) return;
