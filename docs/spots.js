@@ -120,25 +120,90 @@ function bindRes(items) {
   });
 }
 
-/* ---------- spots de glisse sur les cartes ---------- */
-function drawDbSpots(map, layer, onTap) {
-  if (!map || !layer || !SDB.list) return;
-  layer.clearLayers();
-  if (map.getZoom() < 8) return; // trop de points à petite échelle
+/* ---------- conditions de vent par spot (vert / orange / noir) ---------- */
+const COND = new Map(); // clé lat,lon → { at, off, time, ws, wg, wd }
+const ckey = s => s.lat.toFixed(3) + ',' + s.lon.toFixed(3);
+let condBusy = false;
+async function fetchCond(spots) {
+  const need = spots.filter(s => { const c = COND.get(ckey(s)); return !c || Date.now() - c.at > 45 * 60e3; });
+  if (!need.length || condBusy || !navigator.onLine) return false;
+  condBusy = true;
+  try {
+    for (let i = 0; i < need.length; i += 50) {
+      const part = need.slice(i, i + 50);
+      let j = await getJSON(`${OM}?latitude=${part.map(s => s.lat.toFixed(3)).join(',')}&longitude=${part.map(s => s.lon.toFixed(3)).join(',')}&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m&forecast_days=7&timezone=auto`);
+      if (!Array.isArray(j)) j = [j];
+      j.forEach((x, k) => { if (x && x.hourly) COND.set(ckey(part[k]), { at: Date.now(), off: x.utc_offset_seconds || 0, time: x.hourly.time, ws: x.hourly.wind_speed_10m, wg: x.hourly.wind_gusts_10m, wd: x.hourly.wind_direction_10m }); });
+    }
+    return true;
+  } catch (e) { return false; } finally { condBusy = false; }
+}
+// heure affichée : celle du curseur de la carte, sinon maintenant (heure locale du spot)
+function condAt(s, tStr) {
+  const c = COND.get(ckey(s)); if (!c) return null;
+  const t = tStr || new Date(Date.now() + c.off * 1000).toISOString().slice(0, 13) + ':00';
+  const i = c.time.indexOf(t); if (i < 0) return null;
+  return { w: c.ws[i], g: c.wg[i], d: c.wd[i] };
+}
+function rateCond(c) {
+  if (!c || c.w == null) return null;
+  const w = kn(c.w), g = c.g == null ? w : kn(c.g);
+  if (w >= cfg.wmin && w <= cfg.wmax && g <= cfg.wmax + 10) return 'ok';
+  if ((w >= cfg.wmin - 4 && w < cfg.wmin) || (w > cfg.wmax && w <= cfg.wmax + 5) || (w >= cfg.wmin && w <= cfg.wmax)) return 'mid';
+  return 'no';
+}
+const SAIL = '<svg viewBox="0 0 24 24"><path d="M3.5 17.5C5 9 11 4 20.5 3c-3 4.5-3.6 9.6-2 15.5-4.8-2.6-10-2.9-15-1z"/><path d="M5 19.5l13-2" stroke-width="1.6" fill="none"/></svg>';
+function condHtml(r, s) {
+  if (r === 'ok') return `<div class="cmk ok">${SAIL}</div>`;
+  if (r === 'mid') return `<div class="cmk mid"></div>`;
+  if (r === 'no') return `<div class="cmk no"></div>`;
+  return `<div class="cmk un">${s.icon || ''}</div>`;
+}
+
+/* ---------- tous les spots sur les cartes ---------- */
+function visibleSpots(map) {
   const b = map.getBounds(), S = b.getSouth(), N = b.getNorth(), W = b.getWest(), E = b.getEast();
-  let n = 0;
-  for (const s of SDB.list) {
-    if (s.lat < S || s.lat > N || s.lon < W || s.lon > E) continue;
-    if (favs().some(f => Math.abs(f.lat - s.lat) < 0.003 && Math.abs(f.lon - s.lon) < 0.003)) continue;
-    const icon = L.divIcon({ className: '', html: `<div class="dbmk">${spotIcon(s)}</div>`, iconSize: [22, 22], iconAnchor: [11, 11] });
-    L.marker([s.lat, s.lon], { icon, zIndexOffset: 200 }).addTo(layer)
-      .bindTooltip(esc(spotLabel(s)), { direction: 'top', offset: [0, -10] })
+  const inB = s => s.lat >= S && s.lat <= N && s.lon >= W && s.lon <= E;
+  const out = [];
+  favs().forEach(s => inB(s) && out.push({ name: s.name, lat: s.lat, lon: s.lon, fav: true, icon: '★' }));
+  (M.sessionSpots || []).forEach(s => { if (inB(s) && !out.some(o => sameSpot(o, s))) out.push({ name: s.name, lat: s.lat, lon: s.lon, icon: '🏄' }); });
+  if (map.getZoom() >= 8 && SDB.list) {
+    for (const s of SDB.list) {
+      if (!inB(s) || out.some(o => Math.abs(o.lat - s.lat) < 0.003 && Math.abs(o.lon - s.lon) < 0.003)) continue;
+      out.push({ name: spotLabel(s), lat: s.lat, lon: s.lon, icon: spotIcon(s) });
+      if (out.length >= 150) break;
+    }
+  }
+  return out;
+}
+function drawDbSpots(map, layer, onTap, tStr) {
+  if (!map || !layer) return;
+  layer.clearLayers();
+  const list = visibleSpots(map);
+  list.forEach(s => {
+    const c = condAt(s, tStr), r = rateCond(c);
+    const sz = r === 'ok' ? 30 : 18;
+    const icon = L.divIcon({ className: '', html: condHtml(r, s), iconSize: [sz, sz], iconAnchor: [sz / 2, sz / 2] });
+    const tip = `${esc(s.name)}${c && c.w != null ? ` · ${wf(c.w)} (raf. ${wf(c.g)}) ${wUnit()} ${dirName(c.d)}` : ''}`;
+    L.marker([s.lat, s.lon], { icon, zIndexOffset: s.fav ? 900 : r === 'ok' ? 700 : 300 }).addTo(layer)
+      .bindTooltip(tip, s.fav ? { permanent: true, direction: 'right', offset: [10, 0], className: 'stip' } : { direction: 'top', offset: [0, -10] })
       .on('click', ev => { L.DomEvent.stopPropagation(ev); onTap(s); });
-    if (++n >= 400) break;
+  });
+  // charge les conditions manquantes puis redessine
+  fetchCond(list).then(changed => { if (changed) drawDbSpots(map, layer, onTap, tStr); });
+}
+const mxTimeStr = () => (M.field !== 'off' && typeof fieldTime === 'function' && fieldTime()) || null;
+const wmTimeStr = () => (WM.grid ? WM.grid.T[WM.t] : null);
+function refreshDbMarkers() {
+  if (M.map) {
+    if (!M.dbLayer) { M.dbLayer = L.layerGroup().addTo(M.map); M.map.on('moveend', () => drawDbSpots(M.map, M.dbLayer, s => onMapTap(s.lat, s.lon, s.name), mxTimeStr())); }
+    drawDbSpots(M.map, M.dbLayer, s => onMapTap(s.lat, s.lon, s.name), mxTimeStr());
+  }
+  if (WM.map) {
+    if (!WM.dbLayer) { WM.dbLayer = L.layerGroup().addTo(WM.map); WM.map.on('moveend', () => drawDbSpots(WM.map, WM.dbLayer, s => wmTap(s.lat, s.lon), wmTimeStr())); }
+    drawDbSpots(WM.map, WM.dbLayer, s => wmTap(s.lat, s.lon), wmTimeStr());
   }
 }
-function refreshDbMarkers() {
-  if (M.map) { if (!M.dbLayer) { M.dbLayer = L.layerGroup().addTo(M.map); M.map.on('moveend', () => drawDbSpots(M.map, M.dbLayer, s => onMapTap(s.lat, s.lon, spotLabel(s)))); } drawDbSpots(M.map, M.dbLayer, s => onMapTap(s.lat, s.lon, spotLabel(s))); }
-  if (WM.map) { if (!WM.dbLayer) { WM.dbLayer = L.layerGroup().addTo(WM.map); WM.map.on('moveend', () => drawDbSpots(WM.map, WM.dbLayer, s => wmTap(s.lat, s.lon))); } drawDbSpots(WM.map, WM.dbLayer, s => wmTap(s.lat, s.lon)); }
-}
+let condT = null;
+const refreshCondSoon = () => { clearTimeout(condT); condT = setTimeout(refreshDbMarkers, 120); };
 $('sdbRefresh').onclick = async e => { e.preventDefault(); dbStatus('Mise à jour des spots…'); try { await loadSpotDB(true); dbStatus(`${SDB.list.length} spots kite / windsurf / wing (OpenStreetMap)`); refreshDbMarkers(); } catch (e) { dbStatus('Mise à jour impossible (hors ligne ?)'); } };

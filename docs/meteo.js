@@ -570,8 +570,6 @@ function drawSpotMarkers() {
       .bindTooltip(esc(s.name), { permanent: cls !== 'ses', direction: 'right', offset: [12, 0], className: 'stip' })
       .on('click', ev => { L.DomEvent.stopPropagation(ev); onMapTap(s.lat, s.lon, s.name); });
   };
-  (M.sessionSpots || []).filter(s => !isFav(s)).forEach(s => add(s, 'ses', '🏄'));
-  favs().forEach(s => add(s, M.spot && sameSpot(s, M.spot) ? 'cur' : 'fav', '★'));
   if (M.spot && !isFav(M.spot)) add(M.spot, 'cur', '●');
 }
 async function onMapTap(lat, lon, knownName) {
@@ -658,7 +656,7 @@ function drawField() {
     L.marker([p.lat, p.lon], { icon, interactive: false, zIndexOffset: -100 }).addTo(M.fieldLayer);
   });
 }
-$('mxTime').oninput = drawField;
+$('mxTime').oninput = () => { drawField(); if (typeof refreshCondSoon === 'function') refreshCondSoon(); };
 $('mxRefresh').onclick = () => renderMeteo(true);
 $('mxBig').onclick = $('mxBig2').onclick = () => openWindMap();
 // changement d'unité rapide : km/h → nœuds → m/s → mph

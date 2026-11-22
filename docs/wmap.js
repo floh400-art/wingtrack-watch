@@ -104,7 +104,6 @@ function renderLegend() {
 function drawWmSpots() {
   if (!WM.spotsLayer) return;
   WM.spotsLayer.clearLayers();
-  favs().forEach(s => L.circleMarker([s.lat, s.lon], { radius: 7, color: '#fff', weight: 2, fillColor: '#3b82f6', fillOpacity: 1 }).addTo(WM.spotsLayer).bindTooltip(esc(s.name)));
   if (M.spot && !isFav(M.spot)) L.circleMarker([M.spot.lat, M.spot.lon], { radius: 7, color: '#fff', weight: 2, fillColor: '#22c55e', fillOpacity: 1 }).addTo(WM.spotsLayer).bindTooltip(esc(M.spot.name));
 }
 
@@ -159,7 +158,7 @@ async function loadGrid() {
     $('wmTime').max = nT - 1; $('wmTime').value = WM.t;
     $('wmStatus').textContent = '';
   } catch (e) { $('wmStatus').textContent = 'Données indisponibles (hors ligne ?)'; return; }
-  paintTime(); drawHeat(); resetParticles();
+  paintTime(); drawHeat(); resetParticles(); refreshCondSoon();
 }
 
 /* ---------- interpolation ---------- */
@@ -310,13 +309,13 @@ function paintTime() {
   $('wmDay').textContent = dayLabel(t.slice(0, 10)).replace(/^./, c => c.toUpperCase());
   $('wmInfo').textContent = `${WM_LAYERS[WM.layer]} · ${isWave() ? 'modèle marin' : WM_MODELS.find(m => m.id === WM.model).name}`;
 }
-$('wmTime').oninput = () => { WM.t = +$('wmTime').value; paintTime(); drawHeat(); };
+$('wmTime').oninput = () => { WM.t = +$('wmTime').value; paintTime(); drawHeat(); refreshCondSoon(); };
 $('wmPlay').onclick = () => { if (WM.playing) stopPlay(); else startPlay(); };
 function startPlay() {
   $('wmPlay').textContent = '❚❚';
   WM.playing = setInterval(() => {
     if (!WM.grid) return;
-    WM.t = (WM.t + 1) % WM.grid.nT; $('wmTime').value = WM.t; paintTime(); drawHeat();
+    WM.t = (WM.t + 1) % WM.grid.nT; $('wmTime').value = WM.t; paintTime(); drawHeat(); refreshCondSoon();
   }, 700);
 }
 function stopPlay() { clearInterval(WM.playing); WM.playing = null; $('wmPlay').textContent = '▶'; }
