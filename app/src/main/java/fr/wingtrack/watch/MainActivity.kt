@@ -76,9 +76,13 @@ class MainActivity : ComponentActivity() {
 }
 
 /* ---------- formatage ---------- */
+private val UNITS = listOf("kmh", "kn", "ms", "mph")
+private fun unitFactor(u: String) = when (u) { "kn" -> 1.943844; "ms" -> 1.0; "mph" -> 2.236936; else -> 3.6 }
+private fun unitLabel(u: String) = when (u) { "kn" -> "nds"; "ms" -> "m/s"; "mph" -> "mph"; else -> "km/h" }
+private fun unitName(u: String) = when (u) { "kn" -> "nœuds"; "ms" -> "m/s"; "mph" -> "mph"; else -> "km/h" }
 private fun fmtSpeed(ctx: Context, ms: Double) =
-    String.format(Locale.FRANCE, "%.1f", if (Prefs.knots(ctx)) ms * 1.943844 else ms * 3.6)
-private fun unit(ctx: Context) = if (Prefs.knots(ctx)) "nds" else "km/h"
+    String.format(Locale.FRANCE, "%.1f", ms * unitFactor(Prefs.unit(ctx)))
+private fun unit(ctx: Context) = unitLabel(Prefs.unit(ctx))
 private fun fmtDist(m: Double) =
     if (m >= 1000) String.format(Locale.FRANCE, "%.2f km", m / 1000) else "${m.toInt()} m"
 private fun fmtTime(s: Double): String {
@@ -295,15 +299,15 @@ fun DetailScreen(id: String, onDeleted: () -> Unit) {
 @Composable
 fun SettingsScreen() {
     val ctx = LocalContext.current
-    var knots by remember { mutableStateOf(Prefs.knots(ctx)) }
+    var unitSel by remember { mutableStateOf(Prefs.unit(ctx)) }
     var foil by remember { mutableIntStateOf(Prefs.foilKmh(ctx)) }
     var screenOn by remember { mutableStateOf(Prefs.screenOn(ctx)) }
     val st = rememberScalingLazyListState()
     ScalingLazyColumn(state = st, modifier = Modifier.fillMaxSize()) {
         item { Text("Réglages", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Teal, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }
         item {
-            Chip(onClick = { knots = !knots; Prefs.setKnots(ctx, knots) },
-                label = { Text("Unité") }, secondaryLabel = { Text(if (knots) "nœuds" else "km/h") },
+            Chip(onClick = { unitSel = UNITS[(UNITS.indexOf(unitSel) + 1) % UNITS.size]; Prefs.setUnit(ctx, unitSel) },
+                label = { Text("Unité") }, secondaryLabel = { Text("${unitName(unitSel)} (toucher pour changer)") },
                 colors = ChipDefaults.secondaryChipColors(), modifier = Modifier.fillMaxWidth())
         }
         item {

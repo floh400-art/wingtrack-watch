@@ -79,8 +79,9 @@ object SessionStore {
 
 object Prefs {
     private fun sp(ctx: Context) = ctx.getSharedPreferences("wingtrack", Context.MODE_PRIVATE)
-    fun knots(ctx: Context) = sp(ctx).getBoolean("knots", false)
-    fun setKnots(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("knots", v).apply()
+    /** Unité de vitesse : "kmh", "kn", "ms" ou "mph" (reprend l'ancien réglage nœuds). */
+    fun unit(ctx: Context): String = sp(ctx).getString("unit", null) ?: if (sp(ctx).getBoolean("knots", false)) "kn" else "kmh"
+    fun setUnit(ctx: Context, v: String) = sp(ctx).edit().putString("unit", v).apply()
     fun foilKmh(ctx: Context) = sp(ctx).getInt("foil", 12)
     fun setFoilKmh(ctx: Context, v: Int) = sp(ctx).edit().putInt("foil", v).apply()
     fun screenOn(ctx: Context) = sp(ctx).getBoolean("screenOn", true)

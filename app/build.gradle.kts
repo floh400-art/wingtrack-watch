@@ -12,8 +12,8 @@ android {
         applicationId = "fr.wingtrack.watch"
         minSdk = 30          // Wear OS 3 : Galaxy Watch 4 et plus récentes
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.2"
     }
 
     // Clé fixe : chaque nouvelle version s'installe par-dessus l'ancienne sans perdre les sessions
