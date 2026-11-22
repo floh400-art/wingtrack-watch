@@ -17,6 +17,9 @@ function openCarte() {
     if (lp) { lp.style.zIndex = 450; lp.style.pointerEvents = 'none'; }
     cmBase();
     CM.layer = L.layerGroup().addTo(CM.map);
+    CM.staLayer = L.layerGroup().addTo(CM.map);
+    // toucher la carte ailleurs que sur un spot : créer un spot ici / prévisions
+    CM.map.on('click', e => cmEmptyTap(e.latlng.lat, e.latlng.lng));
     CM.map.on('moveend', () => { clearTimeout(CM.t); CM.t = setTimeout(cmDraw, 300); });
     const sp = M.spot || cfg.meteoSpot || favs()[0];
     CM.map.setView(sp ? [sp.lat, sp.lon] : [46.6, 2.4], sp ? 9 : 6);
@@ -33,6 +36,7 @@ function cmBase() {
 }
 function cmDraw() {
   if (!CM.map || !CM.layer) return;
+  drawStations(CM.map, CM.staLayer, s => stationPopup(CM.map, s, x => { show('meteo'); setSpot({ name: x.name, lat: x.lat, lon: x.lon }); }));
   drawDbSpots(CM.map, CM.layer, cmTap, cmTime(), {
     minZoom: 7, cap: 160, onlyOk: CM.onlyOk, timeFn: cmTime,
     onCount: (n, tot, nb) => {
@@ -153,3 +157,16 @@ $('cmLocClose').onclick = () => { $('cmLocal').classList.remove('on', 'mini'); i
 $('cmLocHere').onclick = () => { CM.loc = null; openLocal(); };
 $('cmLocCenter').onclick = async () => { if (!CM.map) return; const b = CM.map.getBounds(), c = CM.map.getCenter ? CM.map.getCenter() : { lat: (b.getSouth() + b.getNorth()) / 2, lng: (b.getWest() + b.getEast()) / 2 }; CM.loc = { lat: c.lat, lon: c.lng, name: (await reverseGeocode(c.lat, c.lng)) || 'centre de la carte' }; renderLocal(); };
 $('cmLocToggle').onclick = () => $('cmLocal').classList.toggle('mini');
+
+/* ---------- toucher une zone vide : créer un spot ---------- */
+async function cmEmptyTap(lat, lon) {
+  const pop = L.popup({ maxWidth: 240 }).setLatLng([lat, lon]).setContent('<div class="pop">…</div>').openOn(CM.map);
+  const name = (await reverseGeocode(lat, lon)) || `Point ${lat.toFixed(3)}, ${lon.toFixed(3)}`;
+  pop.setContent(`<div class="pop"><b>${esc(name)}</b><br><small>${lat.toFixed(4)}, ${lon.toFixed(4)}</small><br><button class="btn small pri" id="ceNew">＋ Créer un spot ici</button> <button class="btn small" id="ceGo">Prévisions</button></div>`);
+  setTimeout(() => {
+    const a = document.getElementById('ceNew'), b = document.getElementById('ceGo');
+    if (a) a.onclick = async () => { CM.map.closePopup(); await createSpot(lat, lon, name); show('carte'); cmDraw(); };
+    if (b) b.onclick = () => { CM.map.closePopup(); show('meteo'); setSpot({ name, lat, lon }); };
+  }, 0);
+}
+$('cmStaBtn').onclick = () => { cfg.showStations = cfg.showStations === false ? true : false; saveCfg(); $('cmStaBtn').classList.toggle('off', cfg.showStations === false); toast(cfg.showStations === false ? 'Balises masquées' : 'Balises de vent en direct affichées'); cmDraw(); };

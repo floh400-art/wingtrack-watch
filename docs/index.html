@@ -265,6 +265,10 @@ table.fc td.shcell{padding:4px 2px}table.fc td.shcell small{font-weight:800;font
 .wmp-op button{background:rgba(255,255,255,.08);color:#fff;border-radius:18px;padding:8px 10px;font-weight:700;font-size:12px;white-space:nowrap}.wmp-op button.on{background:#fff;color:#06141f}
 .wmp-op input{flex:1;accent-color:var(--acc)}.wmp-op span{color:#fff;font-weight:700;font-size:13px;min-width:40px;text-align:right}
 .wmcv{transition:opacity .25s}
+.stmk{display:flex;flex-direction:column;align-items:center;width:38px}
+.stmk svg{width:18px;height:18px;fill:#fff;stroke:#06141f;stroke-width:1.5;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))}
+.stmk span{font-size:11px;font-weight:800;padding:0 5px;border-radius:7px;border:1.5px solid #fff;margin-top:-2px;box-shadow:0 1px 3px rgba(0,0,0,.5)}
+.wmbtn.off{opacity:.45}
 </style>
 </head>
 <body>
@@ -375,7 +379,7 @@ table.fc td.shcell{padding:4px 2px}table.fc td.shcell small{font-weight:800;font
   <div id="cmMap"></div>
   <div class="cmtop">
     <div class="cmtitle"><b>Spots</b><span id="cmCount">Chargement des spots…</span></div>
-    <div class="cmbtns"><button class="wmbtn loc" id="cmLocalBtn" title="Spots autour de moi">Local</button><button class="wmbtn" id="cmSearch" title="Chercher">🔍</button><button class="wmbtn" id="cmHere" title="Ma position">📍</button><button class="wmbtn" id="cmBaseBtn" title="Fond de carte">🗺️</button></div>
+    <div class="cmbtns"><button class="wmbtn loc" id="cmLocalBtn" title="Spots autour de moi">Local</button><button class="wmbtn" id="cmSearch" title="Chercher">🔍</button><button class="wmbtn" id="cmHere" title="Ma position">📍</button><button class="wmbtn" id="cmBaseBtn" title="Fond de carte">🗺️</button><button class="wmbtn" id="cmStaBtn" title="Balises de vent en direct">🌀</button></div>
   </div>
   <div class="cmlocal" id="cmLocal">
     <div class="row"><button class="cmgrip" id="cmLocToggle"></button></div>
@@ -389,7 +393,7 @@ table.fc td.shcell{padding:4px 2px}table.fc td.shcell small{font-weight:800;font
     <div class="row"><button class="wmplay" id="cmPlay">▶</button>
       <div class="grow"><div class="row wmline"><b id="cmClock">Maintenant</b><span class="grow"></span><button class="cmonly" id="cmOnly">Navigables seulement</button></div>
       <input type="range" id="cmTime" min="0" max="167" value="0"></div></div>
-    <div class="condleg"><span><i style="background:#16a34a"></i>Bon</span><span><i style="background:#f59e0b"></i>Moyen</span><span><i style="background:#111"></i>Rien</span><span><i style="background:#16a34a;box-shadow:0 0 0 2px #ef4444"></i>⚠ vent de terre</span><span><i style="background:#16a34a;box-shadow:0 0 0 2px #f59e0b"></i>side-off</span></div>
+    <div class="condleg"><span><i style="background:#16a34a"></i>Bon</span><span><i style="background:#f59e0b"></i>Moyen</span><span><i style="background:#111"></i>Rien</span><span><i style="background:#16a34a;box-shadow:0 0 0 2px #ef4444"></i>⚠ vent de terre</span><span><i style="background:#16a34a;box-shadow:0 0 0 2px #f59e0b"></i>side-off</span><span>🌀 balise (vent mesuré)</span></div>
   </div>
 </section>
 
@@ -510,6 +514,7 @@ table.fc td.shcell{padding:4px 2px}table.fc td.shcell small{font-weight:800;font
 <script src="replay.js"></script>
 <script src="spots.js"></script>
 <script src="shore.js"></script>
+<script src="stations.js"></script>
 <script src="carte.js"></script>
 </body>
 </html>
