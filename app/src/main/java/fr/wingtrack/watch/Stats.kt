@@ -34,6 +34,14 @@ data class Summary(
     val bestAccelGain: Double = 0.0, // m/s
     val bestAccelDt: Double = 0.0,   // s
     val wind: Double = -1.0,         // direction d'où vient le vent (°), -1 si inconnue
+    val hrAvg: Double = 0.0,
+    val hrMax: Int = 0,
+    val kcal: Double = 0.0,
+    val jumpCount: Int = 0,
+    val maxJump: Double = 0.0,       // m
+    val maxAirtime: Double = 0.0,    // s
+    val pumps: Int = 0,
+    val pumpsPerTakeoff: Double = 0.0,
 )
 
 /** Même moteur que l'appli téléphone (docs/stats.js v2). */
@@ -52,6 +60,8 @@ object Stats {
         val s = sin(dLat / 2).let { it * it } + cos(rad(lat1)) * cos(rad(lat2)) * sin(dLon / 2).let { it * it }
         return 2 * R * asin(min(1.0, sqrt(s)))
     }
+
+    fun bearingTo(a: Pt, b: Pt): Double = bearing(a, b)
 
     private fun bearing(a: Pt, b: Pt): Double {
         val y = sin(rad(b.lon - a.lon)) * cos(rad(b.lat))

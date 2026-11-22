@@ -23,6 +23,8 @@ object SessionStore {
             .put("takeoffs", s.takeoffs).put("jibes", s.jibes).put("foilJibes", s.foilJibes)
             .put("tacks", s.tacks).put("foilTacks", s.foilTacks).put("accels", s.accels)
             .put("bestAccelGain", s.bestAccelGain).put("bestAccelDt", s.bestAccelDt).put("wind", s.wind)
+            .put("hrAvg", s.hrAvg).put("hrMax", s.hrMax).put("kcal", s.kcal).put("jumpCount", s.jumpCount)
+            .put("maxJump", s.maxJump).put("maxAirtime", s.maxAirtime).put("pumps", s.pumps).put("pumpsPerTakeoff", s.pumpsPerTakeoff)
         File(dir(ctx), "$id.json").writeText(j.toString())
         File(dir(ctx), "$id.gpx").writeText(gpx(pts))
         return id
@@ -64,6 +66,9 @@ object SessionStore {
         tacks = j.optInt("tacks"), foilTacks = j.optInt("foilTacks"), accels = j.optInt("accels"),
         bestAccelGain = j.optDouble("bestAccelGain", 0.0), bestAccelDt = j.optDouble("bestAccelDt", 0.0),
         wind = j.optDouble("wind", -1.0),
+        hrAvg = j.optDouble("hrAvg", 0.0), hrMax = j.optInt("hrMax"), kcal = j.optDouble("kcal", 0.0),
+        jumpCount = j.optInt("jumpCount"), maxJump = j.optDouble("maxJump", 0.0), maxAirtime = j.optDouble("maxAirtime", 0.0),
+        pumps = j.optInt("pumps"), pumpsPerTakeoff = j.optDouble("pumpsPerTakeoff", 0.0),
     )
 
     private fun gpx(pts: List<Pt>): String {
@@ -84,6 +89,10 @@ object Prefs {
     fun setUnit(ctx: Context, v: String) = sp(ctx).edit().putString("unit", v).apply()
     fun foilKmh(ctx: Context) = sp(ctx).getInt("foil", 12)
     fun setFoilKmh(ctx: Context, v: Int) = sp(ctx).edit().putInt("foil", v).apply()
+    fun jumps(ctx: Context) = sp(ctx).getBoolean("jumps", true)
+    fun setJumps(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("jumps", v).apply()
+    fun weight(ctx: Context) = sp(ctx).getInt("weight", 75)
+    fun setWeight(ctx: Context, v: Int) = sp(ctx).edit().putInt("weight", v).apply()
     fun screenOn(ctx: Context) = sp(ctx).getBoolean("screenOn", true)
     fun setScreenOn(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("screenOn", v).apply()
 }

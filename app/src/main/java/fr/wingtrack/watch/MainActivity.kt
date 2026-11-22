@@ -34,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -112,7 +113,7 @@ fun App(activity: MainActivity) {
     fun startSession() {
         if (hasLocation(ctx)) { TrackingService.send(ctx, TrackingService.ACTION_START); route = "live" }
         else {
-            val perms = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+            val perms = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.BODY_SENSORS)
             if (Build.VERSION.SDK_INT >= 33) perms.add(Manifest.permission.POST_NOTIFICATIONS)
             permLauncher.launch(perms.toTypedArray())
         }
@@ -210,7 +211,15 @@ fun LiveScreen(activity: MainActivity, s: LiveState) {
             Text("Max ${fmtSpeed(ctx, s.vmax)}", fontSize = 13.sp, color = Teal, fontWeight = FontWeight.Bold)
             Text(fmtDist(s.distance), fontSize = 13.sp)
         }
-        Text("${s.jibes} J · ${s.tacks} T", fontSize = 12.sp, color = Muted)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("${s.jibes}J ${s.tacks}T", fontSize = 12.sp, color = Muted)
+            if (s.hr > 0) Text("♥${s.hr}", fontSize = 12.sp, color = Red, fontWeight = FontWeight.Bold)
+            if (s.jumps > 0) Text("⤴${String.format(Locale.FRANCE, "%.1f", s.lastJump)}m", fontSize = 12.sp, color = Orange)
+            if (s.homeDist >= 30) {
+                Text("↑", fontSize = 13.sp, color = Teal, fontWeight = FontWeight.ExtraBold, modifier = Modifier.rotate(s.homeRel.toFloat()))
+                Text(fmtDist(s.homeDist), fontSize = 12.sp, color = Teal)
+            }
+        }
         Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Button(
@@ -272,6 +281,11 @@ fun DetailScreen(id: String, onDeleted: () -> Unit) {
         "Accélérations" to "${s.accels}",
         "Meilleure accél." to if (s.bestAccelDt > 0) "+${fmtSpeed(ctx, s.bestAccelGain)} en ${s.bestAccelDt.toInt()} s" else "–",
         "Vent estimé" to if (s.wind >= 0) "du ${compass(s.wind)}" else "–",
+        "Cardio" to if (s.hrMax > 0) "moy ${s.hrAvg.toInt()} · max ${s.hrMax}" else "–",
+        "Calories (est.)" to if (s.kcal > 0) "${s.kcal.toInt()} kcal" else "–",
+        "Sauts (est.)" to if (s.jumpCount > 0) "${s.jumpCount} · max ${String.format(Locale.FRANCE, "%.1f", s.maxJump)} m" else "–",
+        "Temps en l'air max" to if (s.maxAirtime > 0) String.format(Locale.FRANCE, "%.1f s", s.maxAirtime) else "–",
+        "Pumps" to if (s.pumps > 0) "${s.pumps} (${s.pumpsPerTakeoff.toInt()} / décollage)" else "–",
     )
     ScalingLazyColumn(state = st, modifier = Modifier.fillMaxSize()) {
         item { Text(fmtDate(s.start), fontSize = 13.sp, color = Muted, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }
@@ -302,6 +316,8 @@ fun SettingsScreen() {
     var unitSel by remember { mutableStateOf(Prefs.unit(ctx)) }
     var foil by remember { mutableIntStateOf(Prefs.foilKmh(ctx)) }
     var screenOn by remember { mutableStateOf(Prefs.screenOn(ctx)) }
+    var jumps by remember { mutableStateOf(Prefs.jumps(ctx)) }
+    var weight by remember { mutableIntStateOf(Prefs.weight(ctx)) }
     val st = rememberScalingLazyListState()
     ScalingLazyColumn(state = st, modifier = Modifier.fillMaxSize()) {
         item { Text("Réglages", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Teal, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }
@@ -318,6 +334,16 @@ fun SettingsScreen() {
         item {
             Chip(onClick = { screenOn = !screenOn; Prefs.setScreenOn(ctx, screenOn) },
                 label = { Text("Écran allumé") }, secondaryLabel = { Text(if (screenOn) "Oui (plus de batterie)" else "Non") },
+                colors = ChipDefaults.secondaryChipColors(), modifier = Modifier.fillMaxWidth())
+        }
+        item {
+            Chip(onClick = { jumps = !jumps; Prefs.setJumps(ctx, jumps) },
+                label = { Text("Détection des sauts") }, secondaryLabel = { Text(if (jumps) "Oui (estimation)" else "Non") },
+                colors = ChipDefaults.secondaryChipColors(), modifier = Modifier.fillMaxWidth())
+        }
+        item {
+            Chip(onClick = { weight = if (weight >= 120) 45 else weight + 5; Prefs.setWeight(ctx, weight) },
+                label = { Text("Poids (calories)") }, secondaryLabel = { Text("$weight kg (toucher pour changer)") },
                 colors = ChipDefaults.secondaryChipColors(), modifier = Modifier.fillMaxWidth())
         }
     }

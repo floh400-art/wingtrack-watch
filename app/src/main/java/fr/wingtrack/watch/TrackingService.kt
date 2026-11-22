@@ -44,6 +44,11 @@ data class LiveState(
     val turns: Int = 0,
     val jibes: Int = 0,
     val tacks: Int = 0,
+    val hr: Int = 0,
+    val jumps: Int = 0,
+    val lastJump: Double = 0.0,   // m
+    val homeDist: Double = -1.0,  // m jusqu'au point de départ
+    val homeRel: Double = 0.0,    // angle du départ par rapport à ta route (°)
     val savedId: String? = null,
 )
 
@@ -76,6 +81,7 @@ class TrackingService : Service(), LocationListener {
     private var recordVmax = 0.0
     private var lastBuzz = 0L
     private var foilKmh = 12.0
+    private var motion: MotionTracker? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -85,6 +91,7 @@ class TrackingService : Service(), LocationListener {
             ACTION_TOGGLE_PAUSE -> {
                 val p = !_state.value.paused
                 lastTick = System.currentTimeMillis()
+                motion?.paused = p
                 _state.value = _state.value.copy(paused = p)
             }
             ACTION_STOP -> stop()
@@ -97,7 +104,11 @@ class TrackingService : Service(), LocationListener {
     private fun start() {
         if (_state.value.running) return
         createChannel()
-        ServiceCompat.startForeground(this, NOTIF_ID, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+        var fgs = ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+        if (android.os.Build.VERSION.SDK_INT >= 34 &&
+            androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.BODY_SENSORS) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+            fgs = fgs or ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH
+        ServiceCompat.startForeground(this, NOTIF_ID, notification(), fgs)
         foilKmh = Prefs.foilKmh(this).toDouble()
         draft = SessionStore.draftFile(this)
         pts.clear()
@@ -111,6 +122,10 @@ class TrackingService : Service(), LocationListener {
         lastTick = System.currentTimeMillis()
         wake = (getSystemService(POWER_SERVICE) as PowerManager)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "wingtrack:gps").apply { acquire() }
+        motion = MotionTracker(this, foilKmh / 3.6, Prefs.jumps(this)) { j ->
+            buzz(longArrayOf(0, 120, 80, 120))
+            _state.value = _state.value.copy(jumps = motion?.jumps?.size ?: 0, lastJump = j.height)
+        }.also { it.start() }
         lm = getSystemService(LOCATION_SERVICE) as LocationManager
         lm?.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, this, Looper.getMainLooper())
         _state.value = LiveState(running = true)
@@ -121,7 +136,7 @@ class TrackingService : Service(), LocationListener {
                 val now = System.currentTimeMillis()
                 if (!_state.value.paused) elapsedMs += now - lastTick
                 lastTick = now
-                var s = _state.value.copy(elapsedS = elapsedMs / 1000)
+                var s = _state.value.copy(elapsedS = elapsedMs / 1000, hr = motion?.hr ?: 0)
                 if (++n % 3 == 0 && pts.size > 2) {
                     val sum = synchronized(pts) { Stats.compute(ArrayList(pts), foilKmh) }
                     s = s.copy(vmax = sum.vmax2, best10 = sum.best10, distance = sum.distance, foilTime = sum.foilTime, turns = sum.turns, jibes = sum.jibes, tacks = sum.tacks)
@@ -152,6 +167,12 @@ class TrackingService : Service(), LocationListener {
             if (!loc.hasSpeed()) v = calc
         }
         synchronized(pts) { pts.add(p) }
+        motion?.onSpeed(v, android.os.SystemClock.elapsedRealtime())
+        // retour au départ : distance + direction par rapport à la route suivie
+        val home = pts.first()
+        var homeRel = _state.value.homeRel
+        if (prev != null && Stats.dist(prev, p) > 2) homeRel = Stats.bearingTo(p, home) - Stats.bearingTo(prev, p)
+        _state.value = _state.value.copy(homeDist = Stats.dist(p, home), homeRel = homeRel)
         runCatching { draft?.appendText("${p.t},${p.lat},${p.lon},${p.speed}\n") }
         val shown = if (prev != null && prev.speed >= 0 && v - prev.speed > 4.0) prev.speed else v // pic isolé
         _state.value = _state.value.copy(speed = shown)
@@ -167,10 +188,24 @@ class TrackingService : Service(), LocationListener {
         ticker?.cancel()
         val copy = synchronized(pts) { ArrayList(pts) }
         var id: String? = null
+        val m = motion
+        m?.stop()
         if (copy.size >= 5) {
-            val sum = Stats.compute(copy, Prefs.foilKmh(this).toDouble())
+            var sum = Stats.compute(copy, Prefs.foilKmh(this).toDouble())
+            if (m != null) {
+                val hours = sum.duration / 3600.0
+                sum = sum.copy(
+                    hrAvg = m.hrAvg, hrMax = m.hrMax,
+                    kcal = 6.0 * Prefs.weight(this) * hours, // MET wingfoil ≈ 6
+                    jumpCount = m.jumps.size, maxJump = m.jumps.maxOfOrNull { it.height } ?: 0.0,
+                    maxAirtime = m.jumps.maxOfOrNull { it.airtime } ?: 0.0,
+                    pumps = m.totalPumps,
+                    pumpsPerTakeoff = if (m.pumpsPerTakeoff.isNotEmpty()) m.pumpsPerTakeoff.average() else 0.0,
+                )
+            }
             id = SessionStore.save(this, copy, sum)
         }
+        motion = null
         draft?.delete()
         runCatching { wake?.release() }
         buzz(longArrayOf(0, 500))
@@ -180,6 +215,7 @@ class TrackingService : Service(), LocationListener {
     }
 
     override fun onDestroy() {
+        motion?.stop()
         scope.cancel()
         lm?.removeUpdates(this)
         runCatching { if (wake?.isHeld == true) wake?.release() }
