@@ -72,7 +72,16 @@ const hm = ms => new Date(ms).toISOString().slice(11, 16).replace(':', 'h');
 /* ---------- récupération des données ---------- */
 const OM = 'https://api.open-meteo.com/v1/forecast';
 const MAR = 'https://marine-api.open-meteo.com/v1/marine';
-async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(r.status); return r.json(); }
+// Open-Meteo gratuit : ~600 appels/min. En cas de refus (429) on se met en pause 65 s pour ne pas aggraver.
+let OM_COOL = 0;
+async function getJSON(url) {
+  const om = /open-meteo\.com/.test(url);
+  if (om && Date.now() < OM_COOL) throw new Error('429');
+  const r = await fetch(url);
+  if (r.status === 429 && om) { OM_COOL = Date.now() + 65e3; throw new Error('429'); }
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
 async function fetchAll(spot) {
   const ll = `latitude=${spot.lat.toFixed(4)}&longitude=${spot.lon.toFixed(4)}&timezone=auto&forecast_days=7`;
   const hv = 'wind_speed_10m,wind_gusts_10m,wind_direction_10m,temperature_2m,weather_code,precipitation';

@@ -19,6 +19,20 @@ const WM_MODELS = [
   { id: 'ukmo_seamless', name: 'UKMO', desc: '2-10 km' },
 ];
 const WM_LAYERS = { wind: 'Vent', gust: 'Rafales', wave: 'Vagues', swell: 'Houle' };
+const WM_BASES = {
+  dark: { l: 'Sombre', d: 'comme PredictWind', base: 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', labels: 'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', att: '© OpenStreetMap © CARTO' },
+  light: { l: 'Clair', d: 'plan détaillé', base: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', labels: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', att: '© OpenStreetMap © CARTO' },
+  sat: { l: 'Satellite', d: 'photo', base: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', labels: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', att: '© Esri' },
+};
+function setWmBase() {
+  if (!WM.map) return;
+  (WM.baseLayers || []).forEach(l => l.remove());
+  const b = WM_BASES[cfg.wmBase || 'dark'] || WM_BASES.dark;
+  WM.baseLayers = [
+    L.tileLayer(b.base, { subdomains: 'abcd', maxZoom: 19, attribution: b.att, detectRetina: false }).addTo(WM.map),
+    L.tileLayer(b.labels, { subdomains: 'abcd', maxZoom: 19, pane: 'wmLabels' }).addTo(WM.map),
+  ];
+}
 
 /* ---------- palettes ---------- */
 // vent : palette PredictWind définie dans meteo.js (WIND_STOPS / WIND_LUT / lut)
@@ -30,14 +44,16 @@ function openWindMap() {
   show('wmap');
   if (!window.L) { $('wmMap').innerHTML = '<div class="empty" style="margin:40px 16px">Carte indisponible hors connexion</div>'; return; }
   if (!WM.map) {
-    WM.map = L.map('wmMap', { zoomControl: false, zoomAnimation: false, attributionControl: true });
-    tiles().addTo(WM.map);
+    WM.map = L.map('wmMap', { zoomControl: false, zoomAnimation: false, attributionControl: true, maxZoom: 15 });
+    const lp = WM.map.createPane ? WM.map.createPane('wmLabels') : null;
+    if (lp) { lp.style.zIndex = 450; lp.style.pointerEvents = 'none'; }
+    setWmBase();
     const pane = WM.map.getPanes().overlayPane;
     WM.heat = document.createElement('canvas'); WM.heat.className = 'wmcv';
     WM.part = document.createElement('canvas'); WM.part.className = 'wmcv';
     pane.appendChild(WM.heat); pane.appendChild(WM.part);
     WM.spotsLayer = L.layerGroup().addTo(WM.map);
-    WM.map.on('moveend', () => { placeCanvases(); drawHeat(); resetParticles(); clearTimeout(WM.pending); WM.pending = setTimeout(loadGrid, 400); });
+    WM.map.on('moveend', () => { placeCanvases(); drawHeat(); resetParticles(); clearTimeout(WM.pending); WM.pending = setTimeout(loadGrid, 700); });
     WM.map.on('movestart', () => { WM.part.getContext('2d').clearRect(0, 0, WM.part.width, WM.part.height); });
     WM.map.on('click', e => wmTap(e.latlng.lat, e.latlng.lng));
     const sp = M.spot || cfg.meteoSpot;
@@ -78,6 +94,8 @@ function renderWmPanel() {
     ${isWave() ? '<p class="cap">Vagues et houle : modèle marin unique (Open-Meteo Marine).</p>' : ''}
     <h3>Finesse de la grille</h3>
     <div class="wmp-grid three">${Object.entries(WM_RES).map(([k, r]) => btn(WM.res === k, `data-r="${k}"`, `${r.l}<small>${r.d}</small>`)).join('')}</div>
+    <h3>Fond de carte</h3>
+    <div class="wmp-grid three">${Object.entries(WM_BASES).map(([k, b]) => btn((cfg.wmBase || 'dark') === k, `data-b="${k}"`, `${b.l}<small>${b.d}</small>`)).join('')}</div>
     <h3>Affichage</h3>
     ${tog('wmIso', WM.iso, 'Isobares + centres H / L' + (isWave() ? ' <small>(couches vent)</small>' : ''))}
     ${tog('wmAnimT', WM.anim2, 'Traînées animées')}
@@ -87,6 +105,7 @@ function renderWmPanel() {
   document.querySelectorAll('#wmPanelBody [data-l]').forEach(b => b.onclick = () => { WM.layer = b.dataset.l; cfg.wmLayer = WM.layer; saveCfg(); re(); });
   document.querySelectorAll('#wmPanelBody [data-m]').forEach(b => b.onclick = () => { WM.model = b.dataset.m; cfg.wmModel = WM.model; saveCfg(); re(); });
   document.querySelectorAll('#wmPanelBody [data-r]').forEach(b => b.onclick = () => { WM.res = b.dataset.r; cfg.wmRes = WM.res; saveCfg(); re(); });
+  document.querySelectorAll('#wmPanelBody [data-b]').forEach(b => b.onclick = () => { cfg.wmBase = b.dataset.b; saveCfg(); setWmBase(); renderWmPanel(); });
   document.querySelectorAll('#wmPanelBody [data-u]').forEach(b => b.onclick = () => { cfg.unit = b.dataset.u; saveCfg(); renderWmBars(); paintTime(); });
   $('wmIso').onclick = () => { WM.iso = !WM.iso; cfg.wmIso = WM.iso; saveCfg(); renderWmPanel(); drawHeat(); };
   $('wmAnimT').onclick = () => { WM.anim2 = !WM.anim2; cfg.wmAnim = WM.anim2; saveCfg(); renderWmPanel(); };
@@ -108,57 +127,87 @@ function drawWmSpots() {
 }
 
 /* ---------- données ---------- */
+// Grille fixe (« treillis ») : les points sont alignés sur des pas de latitude/longitude fixes et
+// mémorisés, donc déplacer la carte ne recharge que les nouvelles cases.
+const WM_PTS = new Map(); // clé → { at, h }
+const LADDER = [0.01, 0.02, 0.03, 0.05, 0.08, 0.1, 0.15, 0.2, 0.3, 0.5, 0.75, 1, 1.5, 2, 3];
+let gridBusy = false, gridAgain = false;
 async function loadGrid() {
   if (!WM.map) return;
-  const sz = WM.map.getSize(), b = WM.map.getBounds();
+  if (gridBusy) { gridAgain = true; return; }
+  gridBusy = true;
+  try { await loadGridInner(); } finally { gridBusy = false; if (gridAgain) { gridAgain = false; loadGrid(); } }
+}
+async function loadGridInner() {
+  const b = WM.map.getBounds(), z = WM.map.getZoom();
   const px = (WM_RES[WM.res] || WM_RES.normal).px;
-  const cols = Math.max(5, Math.min(16, Math.round(sz.x / px))), rows = Math.max(6, Math.min(26, Math.round(sz.y / px)));
-  // marge de 15 % pour couvrir les bords pendant les déplacements
-  const S = b.getSouth(), N = b.getNorth(), Wd = b.getWest(), E = b.getEast();
-  const dLa = (N - S) * 0.15, dLo = (E - Wd) * 0.15;
-  const g = { s: S - dLa, n: N + dLa, w: Wd - dLo, e: E + dLo, cols, rows, layer: WM.layer, model: WM.model };
-  const key = [g.layer, g.model, WM.res, g.s.toFixed(3), g.w.toFixed(3), g.n.toFixed(3), g.e.toFixed(3), cols, rows].join('|');
-  if (WM.grid && WM.grid.key === key) return;
-  const lats = [], lons = [];
-  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { lats.push(g.s + r * (g.n - g.s) / (rows - 1)); lons.push(g.w + c * (g.e - g.w) / (cols - 1)); }
-  const ll = `latitude=${lats.map(x => x.toFixed(3)).join(',')}&longitude=${lons.map(x => x.toFixed(3)).join(',')}&forecast_days=7&timezone=auto`;
-  $('wmStatus').textContent = 'Chargement…';
-  try {
-    let j;
-    if (isWave()) j = await getJSON(`${MAR}?${ll}&hourly=wave_height,wave_direction,swell_wave_height,swell_wave_direction,wave_period,swell_wave_period`);
-    else j = await getJSON(`${OM}?${ll}&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m,pressure_msl${WM.model !== 'best' ? '&models=' + WM.model : ''}`);
-    if (!Array.isArray(j)) j = [j];
-    const first = j.find(x => x && x.hourly && x.hourly.time);
-    if (!first) throw new Error('vide');
-    const T = first.hourly.time, nT = T.length, n = rows * cols;
-    // champs u/v (vers où ça va) + valeur affichée, par heure
+  const target = px / (256 * Math.pow(2, z) / 360);        // degrés par point visés
+  const S0 = b.getSouth(), N0 = b.getNorth(), W0 = b.getWest(), E0 = b.getEast();
+  let step = LADDER.find(d => d >= target) || 3;
+  const count = d => (Math.floor((N0 - S0) / d) + 3) * (Math.floor((E0 - W0) / d) + 3);
+  while (count(step) > 420 && LADDER.indexOf(step) < LADDER.length - 1) step = LADDER[LADDER.indexOf(step) + 1];
+  const r0 = Math.floor(S0 / step) - 1, r1 = Math.ceil(N0 / step) + 1, c0 = Math.floor(W0 / step) - 1, c1 = Math.ceil(E0 / step) + 1;
+  const rows = r1 - r0 + 1, cols = c1 - c0 + 1;
+  const kind = isWave() ? 'marine' : 'wind|' + WM.model;
+  const pk = (r, c) => `${kind}|${step}|${r}|${c}`;
+  const g = { s: r0 * step, n: r1 * step, w: c0 * step, e: c1 * step, cols, rows, layer: WM.layer, model: WM.model, step };
+  const key = [WM.layer, kind, step, r0, r1, c0, c1].join('|');
+  // points manquants (ou de plus d'une heure)
+  const need = [];
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) { const v = WM_PTS.get(pk(r, c)); if (!v || Date.now() - v.at > 3600e3) need.push([r, c]); }
+  if (!need.length && WM.grid && WM.grid.key === key) return;
+  if (need.length) {
+    $('wmStatus').textContent = `Chargement… (${need.length} points)`;
+    try {
+      for (let i = 0; i < need.length; i += 100) {
+        const part = need.slice(i, i + 100);
+        const ll = `latitude=${part.map(([r]) => (r * step).toFixed(3)).join(',')}&longitude=${part.map(([, c]) => (c * step).toFixed(3)).join(',')}&forecast_days=7&timezone=GMT`;
+        let j = isWave() ? await getJSON(`${MAR}?${ll}&hourly=wave_height,wave_direction,swell_wave_height,swell_wave_direction,wave_period,swell_wave_period`)
+          : await getJSON(`${OM}?${ll}&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m,pressure_msl${WM.model !== 'best' ? '&models=' + WM.model : ''}`);
+        if (!Array.isArray(j)) j = [j];
+        j.forEach((x, k) => WM_PTS.set(pk(part[k][0], part[k][1]), { at: Date.now(), h: x && x.hourly }));
+        if (i + 100 < need.length) { assemble(); }
+      }
+      $('wmStatus').textContent = '';
+    } catch (e) {
+      $('wmStatus').textContent = e.message === '429' ? 'Trop de demandes : pause d\'une minute (limite gratuite Open-Meteo)' : 'Données indisponibles (hors ligne ?)';
+      if (e.message === '429') setTimeout(loadGrid, 66e3);
+    }
+  }
+  assemble();
+  function assemble() {
+    let first = null;
+    for (let r = r0; r <= r1 && !first; r++) for (let c = c0; c <= c1; c++) { const v = WM_PTS.get(pk(r, c)); if (v && v.h && v.h.time) { first = v.h; break; } }
+    if (!first) return;
+    // heures en UTC → heure locale du téléphone pour l'affichage
+    const off = -new Date().getTimezoneOffset() * 60;
+    const T = first.time.map(t => new Date(Date.parse(t + ':00Z') + off * 1000).toISOString().slice(0, 16)), nT = T.length, n = rows * cols;
     const U = new Float32Array(nT * n).fill(NaN), V = new Float32Array(nT * n).fill(NaN), S2 = new Float32Array(nT * n).fill(NaN), P = new Float32Array(nT * n).fill(NaN), PR = new Float32Array(nT * n).fill(NaN);
-    j.forEach((x, k) => {
-      if (!x || !x.hourly) return;
-      const h = x.hourly;
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+      const v = WM_PTS.get(pk(r, c)); if (!v || !v.h) continue;
+      const h = v.h, k = (r - r0) * cols + (c - c0);
       const sp = isWave() ? (WM.layer === 'wave' ? h.wave_height : h.swell_wave_height) : (WM.layer === 'gust' ? h.wind_gusts_10m : h.wind_speed_10m);
       const dir = isWave() ? (WM.layer === 'wave' ? h.wave_direction : h.swell_wave_direction) : h.wind_direction_10m;
-      const flow = isWave() ? h.wave_height : h.wind_speed_10m; // vitesse des traînées
+      const flow = isWave() ? h.wave_height : h.wind_speed_10m;
       const per = isWave() ? (WM.layer === 'wave' ? h.wave_period : h.swell_wave_period) : null;
       if (h.pressure_msl) for (let t = 0; t < nT; t++) if (h.pressure_msl[t] != null) PR[t * n + k] = h.pressure_msl[t];
+      if (!sp || !dir) continue;
       for (let t = 0; t < nT; t++) {
-        const v = sp && sp[t], d = dir && dir[t];
-        if (v == null || d == null) continue;
-        const i = t * n + k, f = isWave() ? 6 + (v || 0) * 4 : (flow[t] || 0) / 3.6;
-        const a = d * Math.PI / 180;
-        U[i] = -Math.sin(a) * f; V[i] = -Math.cos(a) * f; S2[i] = v;
+        const val = sp[t], d = dir[t];
+        if (val == null || d == null) continue;
+        const i = t * n + k, f = isWave() ? 6 + val * 4 : (flow[t] || 0) / 3.6, a = d * Math.PI / 180;
+        U[i] = -Math.sin(a) * f; V[i] = -Math.cos(a) * f; S2[i] = val;
         if (per && per[t] != null) P[i] = per[t];
       }
-    });
-    const nowL = new Date(Date.now() + (first.utc_offset_seconds || 0) * 1000).toISOString().slice(0, 13) + ':00';
+    }
+    const nowL = new Date(Date.now() + off * 1000).toISOString().slice(0, 13) + ':00';
     const prevT = WM.grid && WM.grid.T[WM.t];
     WM.grid = { ...g, key, T, nT, n, U, V, S: S2, P, PR, hasP: !isWave() && PR.some(x => !isNaN(x)) };
     const keep = prevT ? T.indexOf(prevT) : -1;
     WM.t = keep >= 0 ? keep : Math.max(0, T.indexOf(nowL));
     $('wmTime').max = nT - 1; $('wmTime').value = WM.t;
-    $('wmStatus').textContent = '';
-  } catch (e) { $('wmStatus').textContent = 'Données indisponibles (hors ligne ?)'; return; }
-  paintTime(); drawHeat(); resetParticles(); refreshCondSoon();
+    paintTime(); drawHeat(); resetParticles(); refreshCondSoon();
+  }
 }
 
 /* ---------- interpolation ---------- */
@@ -192,7 +241,7 @@ function drawHeat() {
   if (!W || !H) return;
   c.clearRect(0, 0, W, H);
   if (!WM.grid) return;
-  const step = 6, w = Math.ceil(W / step), h = Math.ceil(H / step);
+  const step = 4, w = Math.ceil(W / step), h = Math.ceil(H / step);
   const off = document.createElement('canvas'); off.width = w; off.height = h;
   const oc = off.getContext('2d'), img = oc.createImageData(w, h), d = img.data;
   for (let y = 0; y < h; y++) {
@@ -201,7 +250,7 @@ function drawHeat() {
       const ll = x === 0 ? ll0 : WM.map.containerPointToLatLng([x * step + step / 2, y * step + step / 2]);
       const s = sample(ll.lat, ll.lng, WM.t), i = (y * w + x) * 4;
       if (!s) { d[i + 3] = 0; continue; }
-      const col = colorOf(s.s); d[i] = col[0]; d[i + 1] = col[1]; d[i + 2] = col[2]; d[i + 3] = 205;
+      const col = colorOf(s.s); d[i] = col[0]; d[i + 1] = col[1]; d[i + 2] = col[2]; d[i + 3] = 190;
     }
   }
   oc.putImageData(img, 0, 0);

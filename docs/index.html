@@ -223,6 +223,11 @@ textarea{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line)
 .cmk.mid.off{position:relative}
 .sidetag{font-size:11px;font-weight:800;white-space:nowrap}
 .selx{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--txt);font:inherit;margin-bottom:14px}
+.wmstatus{font-size:12px;color:#ffb84d;min-height:0}
+.wmstatus:empty{display:none}
+#wmMap .leaflet-bottom{bottom:150px}
+#wmMap .leaflet-control-attribution{font-size:9px;background:rgba(6,20,31,.6);color:#9fb7c4}
+#wmMap .leaflet-control-attribution a{color:#9fb7c4}
 </style>
 </head>
 <body>
@@ -353,7 +358,8 @@ textarea{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line)
     <div class="row">
       <button class="wmplay" id="wmPlay">▶</button>
       <div class="grow">
-        <div class="row wmline"><b id="wmDay"></b><span id="wmInfo" class="grow"></span><span id="wmStatus"></span></div>
+        <div class="row wmline"><b id="wmDay"></b><span id="wmInfo" class="grow"></span></div>
+        <div class="wmstatus" id="wmStatus"></div>
         <input type="range" id="wmTime" min="0" max="167" value="0">
       </div>
     </div>
