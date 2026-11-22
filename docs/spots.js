@@ -9,7 +9,8 @@ try { localStorage.removeItem('wt_spotdb'); localStorage.removeItem('wt_spotdb3'
 
 /* ---------- plages (spots possibles), chargées par zone quand on zoome ---------- */
 const BEACH = { cells: new Map(), loading: new Set() };
-try { const c = JSON.parse(localStorage.getItem('wt_beach') || '{}'); Object.entries(c).forEach(([k, v]) => { if (Date.now() - v.at < 60 * 86400e3) BEACH.cells.set(k, v); }); } catch (e) {}
+try { localStorage.removeItem('wt_beach'); } catch (e) {} // plages retirées des cartes
+if (0) try { const c = JSON.parse(localStorage.getItem('wt_beach') || '{}'); Object.entries(c).forEach(([k, v]) => { if (Date.now() - v.at < 60 * 86400e3) BEACH.cells.set(k, v); }); } catch (e) {}
 const BCELL = 0.25;
 function saveBeaches() { try { const o = {}; BEACH.cells.forEach((v, k) => o[k] = v); localStorage.setItem('wt_beach', JSON.stringify(o)); } catch (e) { /* plein : tant pis */ } }
 async function loadBeaches(map, box) {
@@ -194,7 +195,6 @@ function visibleSpots(map, minZoom = 8, cap = 150) {
     // les plus proches du centre de la carte d'abord
     const c = map.getCenter ? map.getCenter() : { lat: (S + N) / 2, lng: (W + E) / 2 };
     const pool = SDB.list.filter(inB);
-    if (map.getZoom() >= 10) beachesIn(S, N, W, E).filter(inB).forEach(bch => { if (!pool.some(p => Math.abs(p.lat - bch.lat) < 0.004 && Math.abs(p.lon - bch.lon) < 0.004)) pool.push({ ...bch, beach: true }); });
     const cand = pool.map(s => ({ s, d: (s.lat - c.lat) ** 2 + ((s.lon - c.lng) * Math.cos(c.lat * Math.PI / 180)) ** 2 })).sort((a, b) => (a.s.beach ? 1 : 0) - (b.s.beach ? 1 : 0) || a.d - b.d);
     for (const { s } of cand) {
       if (out.length >= cap) break;
@@ -245,7 +245,6 @@ function drawDbSpots(map, layer, onTap, tStr, opts = {}) {
   if (opts.onCount) opts.onCount(shown, list.length, list.filter(x => x.beach).length);
   // données manquantes : chargées en arrière-plan, puis UN seul redessin regroupé
   const again = changed => { if (changed) scheduleRedraw(map, layer, onTap, tStr, opts); };
-  loadBeaches(map).then(again);
   fetchCond(list).then(again);
   if (typeof ensureShoreArea === 'function') ensureShoreArea(map, list).then(again);
 }

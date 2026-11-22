@@ -81,10 +81,9 @@ function cmDraw() {
     if (map.attributionControl && !map._staAttr) { map.attributionControl.addAttribution(STA_ATTR); map._staAttr = true; }
   }
   CM.sc.set(items);
-  const nb = list.filter(x => x.beach).length;
   $('cmCount').innerHTML = z < 7
     ? 'Zoome pour voir tous les spots de glisse (tes spots restent affichés)'
-    : `<b style="color:#16a34a">${shown.ok} bons</b>${shown.off ? ` (dont ${shown.off} ⚠ vent de terre)` : ''} · <b style="color:#f59e0b">${shown.mid} moyens</b> · ${shown.no} sans vent · ${list.length - nb} spots${nb ? ` + ${nb} plages` : z < 10 ? ' · zoome pour voir aussi les plages' : ''}`;
+    : `<b style="color:#16a34a">${shown.ok} bons</b>${shown.off ? ` (dont ${shown.off} ⚠ vent de terre)` : ''} · <b style="color:#f59e0b">${shown.mid} moyens</b> · ${shown.no} sans vent · ${list.length} spots`;
   // données manquantes : chargées en arrière-plan (une à la fois), puis un seul redessin
   clearTimeout(CM.lt); CM.lt = setTimeout(() => cmLoad(list), 400);
 }
@@ -95,7 +94,6 @@ async function cmLoad(list) {
   try {
     if (cfg.showStations !== false && CM.map.getZoom() >= 6 && (!STA.list || Date.now() - STA.at > 3 * 60e3)) changed = !!(await loadStations().catch(() => null)) || changed;
     changed = (await fetchCond(list)) || changed;
-    changed = (await loadBeaches(CM.map)) || changed;
     if (typeof ensureShoreArea === 'function') changed = (await ensureShoreArea(CM.map, list)) || changed;
   } catch (e) {} finally { CM.loadBusy = false; }
   if (changed) cmDraw();
