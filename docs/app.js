@@ -77,6 +77,7 @@ function show(v) {
   if (v === 'home') renderHome();
   if (v === 'meteo' && typeof renderMeteo === 'function') renderMeteo();
   if (v !== 'wmap' && typeof stopAnim === 'function') { stopAnim(); stopPlay(); }
+  if (v !== 'detail' && typeof rpStop === 'function') rpStop();
 }
 document.querySelectorAll('#nav button').forEach(b => b.onclick = () => show(b.dataset.v));
 
@@ -400,6 +401,7 @@ function renderDetail() {
   document.querySelectorAll('.binL').forEach(e => e.textContent = binW());
   drawMap(); drawChart(-1); drawHist(); drawRuns(); drawPolar();
   if (typeof renderCarnet === 'function') renderCarnet();
+  if (typeof rpInit === 'function') rpInit();
 }
 function drawMap() {
   if (!det.map) det.map = makeMap('dmap');
