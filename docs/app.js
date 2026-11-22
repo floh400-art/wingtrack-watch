@@ -51,7 +51,7 @@ const DB = (() => {
   };
 })();
 
-const SUM_KEYS = ['v', 'distance', 'duration', 'movingTime', 'foilTime', 'foilDist', 'vmax2', 'best10', 'best1min', 'best100m', 'best500m', 'avgMoving', 'runs', 'longestRunS', 'longestRunM', 'takeoffs', 'turns', 'jibes', 'tacks', 'foilJibes', 'foilTacks', 'foilTurns', 'accels', 'maxFromStart', 'wind', 'windAuto', 'doppler'];
+const SUM_KEYS = ['v', 'distance', 'duration', 'movingTime', 'foilTime', 'foilDist', 'vmax2', 'best10', 'best1min', 'best100m', 'best500m', 'avgMoving', 'runs', 'longestRunS', 'longestRunM', 'takeoffs', 'turns', 'jibes', 'tacks', 'foilJibes', 'foilTacks', 'foilTurns', 'accels', 'maxFromStart', 'wind', 'windAuto', 'doppler', 'jibeRate', 'tackRate', 'turnRate', 'upwind', 'downwind', 'vmgUp', 'vmgDown'];
 function statsFor(s) { return WTStats.compute(s.pts, { foilKmh: cfg.foil, windFlip: !!s.windFlip }); }
 function summarize(pts, windFlip) {
   const r = WTStats.compute(pts, { foilKmh: cfg.foil, windFlip: !!windFlip }), o = {};
@@ -124,7 +124,7 @@ async function renderHome() {
   const shown = fSpot ? list.filter(s => fSpot.sessions.includes(s)) : list;
   $('sessions').innerHTML = shown.length ? shown.map(s => `
     <div class="item" data-id="${s.id}">
-      <div><div class="t">${esc(s.name)}</div><div class="m">${s.spot ? '📍 ' + esc(s.spot) + ' · ' : ''}${fdate(s.start)}<br>${fd(s.sum.distance)} · ${ft(s.sum.duration)} · ${s.sum.jibes || 0} J · ${s.sum.tacks || 0} T${s.source === 'import' ? ' · importée' : ''}</div></div>
+      <div><div class="t">${esc(s.name)}</div><div class="m">${s.spot ? '📍 ' + esc(s.spot) + ' · ' : ''}${fdate(s.start)}${s.log && s.log.wing ? ' · aile ' + esc(s.log.wing) + ' m²' : ''}<br>${fd(s.sum.distance)} · ${ft(s.sum.duration)} · ${s.sum.jibes || 0} J · ${s.sum.tacks || 0} T${s.source === 'import' ? ' · importée' : ''}</div></div>
       <div class="s">${fs(s.sum.vmax2)}<small>${uLabel()} max</small></div>
     </div>`).join('') : '<div class="empty">Aucune session pour l\'instant.<br>Lance ta première session ou importe un GPX.</div>';
   document.querySelectorAll('#sessions .item').forEach(e => e.onclick = () => openDetail(e.dataset.id));
@@ -355,7 +355,31 @@ function renderDetail() {
     + tile('Tacks', st.tacks, st.tacks ? st.foilTacks + ' foilés' : '')
     + tile('Accélérations', st.accels)
     + tile('Meilleure accél.', ba ? '+' + fs(ba.gain, 0) : '–', ba ? U + ' en ' + Math.round(ba.dt) + ' s' : '')
-    + tile('Vols', st.runs);
+    + tile('Vols', st.runs)
+    + tile('Réussite jibes', st.jibeRate == null ? '–' : Math.round(st.jibeRate * 100), st.jibeRate == null ? '' : '%', 1)
+    + tile('Réussite tacks', st.tackRate == null ? '–' : Math.round(st.tackRate * 100), st.tackRate == null ? '' : '%')
+    + tile('Réussite totale', st.turnRate == null ? '–' : Math.round(st.turnRate * 100), st.turnRate == null ? '' : '%');
+  // bords, remontée au vent, VMG
+  if (st.wind != null && st.legs.length) {
+    const [uv, uu] = fdN(st.upwind), [dv2, du2] = fdN(st.downwind);
+    $('dLegsBox').style.display = '';
+    $('dLegTiles').innerHTML = tile('Remontée au vent', uv, uu, 1) + tile('Descente sous le vent', dv2, du2) + tile('Bords', st.legs.length)
+      + tile('Meilleur VMG près', fs(st.vmgUp), U) + tile('Meilleur VMG portant', fs(st.vmgDown), U)
+      + tile('Bilan vent', (st.upwind - st.downwind >= 0 ? '+' : '−') + fdN(Math.abs(st.upwind - st.downwind)).join(' '));
+    $('dLegs').innerHTML = `<table class="legs"><tr><th>#</th><th>Départ</th><th>Durée</th><th>Vit. moy</th><th>Vent</th><th>VMG</th><th>Foil</th></tr>` + st.legs.map((l, k) => `
+      <tr data-k="${k}"><td>${k + 1}</td><td>${ft(l.t0)}</td><td>${ft(l.dur)}</td><td>${fs(l.avg)}</td>
+      <td class="${l.gain >= 0 ? 'up' : 'down'}">${l.gain >= 0 ? '▲' : '▼'} ${Math.abs(Math.round(l.gain))} m</td><td>${fs(Math.abs(l.vmg))}</td><td>${Math.round(l.foilPct * 100)}%</td></tr>`).join('') + '</table>';
+    document.querySelectorAll('#dLegs tr[data-k]').forEach(tr => tr.onclick = () => {
+      const l = st.legs[+tr.dataset.k];
+      document.querySelectorAll('#dLegs tr').forEach(x => x.classList.toggle('sel', x === tr));
+      if (det.map) {
+        if (runLayer) runLayer.remove();
+        runLayer = L.polyline(st.pts.slice(l.i, l.j + 1).map(p => [p[1], p[2]]), { color: '#fff', weight: 7, opacity: .85 }).addTo(det.map);
+        det.layers.push(runLayer); det.map.fitBounds(runLayer.getBounds(), { padding: [30, 30] });
+        $('dmap').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    });
+  } else $('dLegsBox').style.display = 'none';
   $('dWind').innerHTML = st.wind == null ? 'Vent : pas assez de données pour l\'estimer'
     : `<span class="warrow" style="transform:rotate(${st.wind + 180}deg)">↑</span> Vent du <b>${compass(st.wind)}</b> (${Math.round(st.wind)}°, estimé d'après ta trace)`;
   const [dv, du] = fdN(st.distance), [rv, ru] = fdN(st.longestRunM), [xv, xu] = fdN(st.maxFromStart);
@@ -374,6 +398,7 @@ function renderDetail() {
   document.querySelectorAll('.uL').forEach(e => e.textContent = uLabel());
   document.querySelectorAll('.binL').forEach(e => e.textContent = binW());
   drawMap(); drawChart(-1); drawHist(); drawRuns(); drawPolar();
+  if (typeof renderCarnet === 'function') renderCarnet();
 }
 function drawMap() {
   if (!det.map) det.map = makeMap('dmap');

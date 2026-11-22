@@ -145,6 +145,17 @@ table.fc tr.sep td,table.fc tr.sep th{border-top:2px solid var(--line)}
 .fa i small{display:block;font-size:9px;font-weight:600;opacity:.85}
 .timebox{margin-top:8px}.timebox input{width:100%;accent-color:var(--acc)}
 .pop .arr{font-size:14px}
+table.legs{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+table.legs th{color:var(--mut);font-size:11px;font-weight:600;text-align:right;padding:8px 6px;border-bottom:1px solid var(--line)}
+table.legs td{text-align:right;padding:8px 6px;border-bottom:1px solid rgba(24,58,80,.6)}
+table.legs th:first-child,table.legs td:first-child{text-align:left}
+table.legs td.up{color:#7ccf3c;font-weight:700}table.legs td.down{color:#ffb84d;font-weight:700}
+table.legs tr.sel td{background:rgba(34,211,197,.15)}
+.wxbox{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 12px;font-size:14px;line-height:1.8}
+#dCarnet .row input{flex:1;min-width:70px}
+#dCarnet .chip2{padding:6px 10px}
+textarea{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--txt);font:inherit;resize:vertical}
+.stars{display:flex;gap:6px}.stars button{background:none;font-size:26px;color:#2a4a5e;padding:0}.stars button.on{color:#ffd166}
 </style>
 </head>
 <body>
@@ -156,6 +167,7 @@ table.fc tr.sep td,table.fc tr.sep th{border-top:2px solid var(--line)}
   <button class="btn pri big-start" id="bStart">▶ Démarrer une session</button>
   <h2>Records</h2>
   <div class="grid" id="records"></div>
+  <button class="btn" id="bProgress" style="width:100%;margin-top:10px">📈 Ma progression</button>
   <div id="spotsBox">
     <h2>Mes spots</h2>
     <div id="hmap"></div>
@@ -203,6 +215,12 @@ table.fc tr.sep td,table.fc tr.sep th{border-top:2px solid var(--line)}
   <div class="grid g3" id="dMan"></div>
   <div class="row windrow"><div class="grow" id="dWind"></div><button class="btn small" id="bWind">Inverser</button></div>
   <p class="cap">Jibe ou tack dépend du sens du vent, estimé d'après ta trace. Si c'est inversé, touche « Inverser ».</p>
+  <div id="dLegsBox">
+    <h2>Bords &amp; remontée au vent</h2>
+    <div class="grid g3" id="dLegTiles"></div>
+    <div class="tblwrap" style="margin-top:10px" id="dLegs"></div>
+    <p class="cap">▲ gain au vent · ▼ descente sous le vent · VMG = vitesse utile vers ou depuis le vent · touche un bord pour le voir sur la carte</p>
+  </div>
   <h2>Chronologie</h2>
   <div id="dEvents" class="evlist"></div>
   <h2>Vols sur le foil</h2>
@@ -217,6 +235,8 @@ table.fc tr.sep td,table.fc tr.sep th{border-top:2px solid var(--line)}
   <canvas id="polar" class="cv" style="height:280px"></canvas>
   <p class="cap tip" id="polarInfo"></p>
   <p class="cap">Vitesse max selon ton angle par rapport au vent (zone rouge : face au vent)</p>
+  <h2>Carnet de bord</h2>
+  <div id="dCarnet"></div>
   <h2>Session</h2>
   <div class="grid g3" id="dSess"></div>
   <h2>Actions</h2>
@@ -226,6 +246,14 @@ table.fc tr.sep td,table.fc tr.sep th{border-top:2px solid var(--line)}
     <button class="btn" id="bShare">Partager</button>
     <button class="btn" id="bDel" style="color:var(--red)">Supprimer</button>
   </div>
+</section>
+
+<!-- PROGRESSION -->
+<section id="progress" class="view">
+  <button class="back" id="bProgBack">‹ Accueil</button>
+  <h1>Ma progression</h1>
+  <p class="sub">Toutes tes sessions, mois par mois</p>
+  <div id="progBody"></div>
 </section>
 
 <!-- MÉTÉO -->
@@ -300,5 +328,6 @@ table.fc tr.sep td,table.fc tr.sep th{border-top:2px solid var(--line)}
 <script src="stats.js"></script>
 <script src="app.js"></script>
 <script src="meteo.js"></script>
+<script src="carnet.js"></script>
 </body>
 </html>

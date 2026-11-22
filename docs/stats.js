@@ -1,7 +1,7 @@
 // WingTrack — moteur de stats v2 (navigateur + Node pour les tests)
 // Points : [t(ms), lat, lon, précision(m)?, vitesseDoppler(m/s)?]
 (function (root) {
-  const VERSION = 2;
+  const VERSION = 3;
   const R = 6371008.8;
   const toRad = d => d * Math.PI / 180;
   const MAX_ACC = 3.0;   // m/s² : accélération max plausible (0 → 30 km/h en ~3 s)
@@ -102,6 +102,7 @@
       runs: 0, longestRunS: 0, longestRunM: 0, takeoffs: 0,
       turns: 0, jibes: 0, tacks: 0, foilJibes: 0, foilTacks: 0, foilTurns: 0,
       accels: 0, bestAccel: null, maxFromStart: 0, wind: null, windAuto: null, doppler: false,
+      jibeRate: null, tackRate: null, turnRate: null, upwind: 0, downwind: 0, vmgUp: 0, vmgDown: 0, legs: [],
       events: [], runList: [], hist: [], polar: [], pts: P
     };
     if (n < 3) return res;
@@ -238,6 +239,39 @@
           cooldown = S[e].t + 8;
           break;
         }
+      }
+    }
+
+    // --- taux de réussite des virements (restés sur le foil) ---
+    res.jibeRate = res.jibes ? res.foilJibes / res.jibes : null;
+    res.tackRate = res.tacks ? res.foilTacks / res.tacks : null;
+    res.turnRate = (res.jibes + res.tacks) ? (res.foilJibes + res.foilTacks) / (res.jibes + res.tacks) : null;
+
+    // --- gain au vent / sous le vent, VMG, bords entre deux virements ---
+    if (W != null) {
+      const ux = Math.sin(toRad(W)), uy = Math.cos(toRad(W)); // vecteur vers le vent (d'où il vient)
+      const lat0 = toRad(P[0][1]);
+      const proj = new Float64Array(n);
+      for (let i = 0; i < n; i++) {
+        const e = toRad(P[i][2] - P[0][2]) * R * Math.cos(lat0), no = toRad(P[i][1] - P[0][1]) * R;
+        proj[i] = e * ux + no * uy;
+      }
+      // lissage de la projection (bruit GPS)
+      const ps = new Float64Array(n);
+      for (let i = 0; i < n; i++) { let s = 0, c = 0; for (let k = i; k >= 0 && T[i] - T[k] <= 3; k--) { s += proj[k]; c++; } for (let k = i + 1; k < n && T[k] - T[i] <= 3; k++) { s += proj[k]; c++; } ps[i] = s / c; }
+      res.vmgUp = Math.max(0, bestOver(T, ps, 30).v);
+      res.vmgDown = Math.max(0, bestOver(T, ps.map(x => -x), 30).v);
+      // bords : du début (ou d'un virement) au virement suivant
+      const cuts = [0, ...res.events.filter(e => ['jibe', 'tack', 'turn'].includes(e.type)).map(e => e.i).sort((a, b) => a - b), n - 1];
+      for (let k = 0; k < cuts.length - 1; k++) {
+        let a = cuts[k], b = cuts[k + 1];
+        while (a < b && v[a] < moveThr) a++;      // ignore l'arrêt de début
+        while (b > a && v[b] < moveThr) b--;
+        const dur = T[b] - T[a]; if (dur < 15) continue;
+        const gain = ps[b] - ps[a], dd = C[b] - C[a];
+        let foil = 0; for (let i = a + 1; i <= b; i++) if (v[i] >= foilOn && T[i] - T[i - 1] <= 30) foil += T[i] - T[i - 1];
+        res.legs.push({ i: a, j: b, t0: T[a], dur, dist: dd, avg: dd / dur, gain, vmg: gain / dur, foilPct: foil / dur, heading: bearing(P[a], P[b]) });
+        if (gain > 0) res.upwind += gain; else res.downwind -= gain;
       }
     }
 
