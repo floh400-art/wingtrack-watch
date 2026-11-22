@@ -18,8 +18,8 @@ if (cfg.wmax == null) cfg.wmax = 30;
 
 /* ---------- unités ---------- */
 const KN = 1.852;
-const wUnit = () => cfg.unit === 'kn' ? 'nds' : 'km/h';
-const wv = kmh => kmh == null ? null : cfg.unit === 'kn' ? kmh / KN : kmh;
+const wUnit = () => uLabel();
+const wv = kmh => kmh == null ? null : kmh / 3.6 * curU().f;
 const wf = kmh => kmh == null ? '–' : Math.round(wv(kmh));
 const kn = kmh => kmh == null ? null : kmh / KN;
 function windColor(kmh) {
@@ -161,6 +161,7 @@ function slots(d, model) {
 
 /* ---------- rendu ---------- */
 async function renderMeteo(force) {
+  paintUnitBtn();
   if (!M.spot) M.spot = cfg.meteoSpot || null;
   await renderSpotChips();
   renderModelBar();
@@ -229,7 +230,7 @@ async function setRange(k) {
   const ok = await ask(k === 'wmin' ? `Vent minimum pour naviguer (${wUnit()})` : `Vent maximum (${wUnit()})`, { extra: `<input type="number" id="wrIn" value="${cur}" style="margin-bottom:14px">` });
   if (!ok) return;
   const v = +$('wrIn').value; if (!isFinite(v) || v <= 0) return;
-  cfg[k] = cfg.unit === 'kn' ? v : v / KN; saveCfg(); drawMeteo();
+  cfg[k] = v / curU().f * 1.943844; saveCfg(); drawMeteo(); // stocké en nœuds
 }
 function tableHtml(d, day) {
   const base = d.time.filter(t => t.startsWith(day));
@@ -655,3 +656,12 @@ function drawField() {
 }
 $('mxTime').oninput = drawField;
 $('mxRefresh').onclick = () => renderMeteo(true);
+// changement d'unité rapide : km/h → nœuds → m/s → mph
+const UORDER = ['kmh', 'kn', 'ms', 'mph'];
+function paintUnitBtn() { $('mxUnit').textContent = curU().l; }
+$('mxUnit').onclick = () => {
+  cfg.unit = UORDER[(UORDER.indexOf(cfg.unit) + 1) % UORDER.length] || 'kmh'; saveCfg();
+  paintUnitBtn(); toast('Unité : ' + curU().name);
+  if (M.data) drawMeteo(); renderSpotList(); drawField();
+};
+paintUnitBtn();

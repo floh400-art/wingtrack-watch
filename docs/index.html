@@ -212,7 +212,7 @@ table.fc tr.sep td,table.fc tr.sep th{border-top:2px solid var(--line)}
   <h2>Temps passé par vitesse</h2>
   <canvas id="hist" class="cv" style="height:160px"></canvas>
   <p class="cap tip" id="histInfo"></p>
-  <p class="cap">Tranches de 5 <span class="uL">km/h</span> · en couleur : au-dessus du seuil foil</p>
+  <p class="cap">Tranches de <span class="binL">5</span> <span class="uL">km/h</span> · en couleur : au-dessus du seuil foil</p>
   <h2>Polaire</h2>
   <canvas id="polar" class="cv" style="height:280px"></canvas>
   <p class="cap tip" id="polarInfo"></p>
@@ -230,7 +230,7 @@ table.fc tr.sep td,table.fc tr.sep th{border-top:2px solid var(--line)}
 
 <!-- MÉTÉO -->
 <section id="meteo" class="view">
-  <div class="row"><h1 class="grow">Météo</h1><button class="btn small" id="mxRefresh">↻</button></div>
+  <div class="row"><h1 class="grow">Météo</h1><button class="btn small" id="mxUnit" title="Changer d'unité">km/h</button><button class="btn small" id="mxRefresh">↻</button></div>
   <p class="sub" id="mxStatus"></p>
   <h2 style="margin-top:6px">Mes spots</h2>
   <div class="spotgrid" id="mxSpotList"></div>
@@ -264,7 +264,7 @@ table.fc tr.sep td,table.fc tr.sep th{border-top:2px solid var(--line)}
 <section id="settings" class="view">
   <h1>Réglages</h1>
   <div class="field"><label>Unité de vitesse</label>
-    <div class="seg" id="sUnit"><button data-u="kmh">km/h</button><button data-u="kn">nœuds</button></div></div>
+    <div class="seg" id="sUnit"><button data-u="kmh">km/h</button><button data-u="kn">nœuds</button><button data-u="ms">m/s</button><button data-u="mph">mph</button></div></div>
   <div class="field"><label>Seuil « sur le foil » (km/h)</label>
     <input type="number" id="sFoil" min="5" max="30" step="1"></div>
   <div class="field"><label>Fond de carte</label>

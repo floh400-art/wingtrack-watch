@@ -6,8 +6,15 @@ const DEF = { unit: 'kmh', foil: 12, map: 'sat', voice: '1' };
 let cfg = Object.assign({}, DEF);
 try { Object.assign(cfg, JSON.parse(localStorage.getItem('wt_cfg') || '{}')); } catch (e) {}
 const saveCfg = () => { try { localStorage.setItem('wt_cfg', JSON.stringify(cfg)); } catch (e) {} };
-const uLabel = () => cfg.unit === 'kn' ? 'nds' : 'km/h';
-const spd = ms => (cfg.unit === 'kn' ? ms * 1.943844 : ms * 3.6);
+const UNITS = {
+  kmh: { f: 3.6, l: 'km/h', say: 'kilomètres heure', name: 'km/h' },
+  kn: { f: 1.943844, l: 'nds', say: 'nœuds', name: 'nœuds' },
+  ms: { f: 1, l: 'm/s', say: 'mètres par seconde', name: 'm/s' },
+  mph: { f: 2.236936, l: 'mph', say: 'miles par heure', name: 'mph' },
+};
+const curU = () => UNITS[cfg.unit] || UNITS.kmh;
+const uLabel = () => curU().l;
+const spd = ms => ms * curU().f;
 const fs = (ms, d = 1) => spd(ms).toFixed(d);
 const fd = m => m >= 1000 ? (m / 1000).toFixed(2) + ' km' : Math.round(m) + ' m';
 const fdN = m => m >= 1000 ? [(m / 1000).toFixed(1), 'km'] : [Math.round(m), 'm'];
@@ -221,7 +228,7 @@ async function requestWake() {
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && live.watch !== null) requestWake(); });
 
 function say(txt) { try { if (cfg.voice === '0' || !('speechSynthesis' in window)) return; const u = new SpeechSynthesisUtterance(txt); u.lang = 'fr-FR'; speechSynthesis.speak(u); } catch (e) {} }
-const sayUnit = () => cfg.unit === 'kn' ? 'nœuds' : 'kilomètres heure';
+const sayUnit = () => curU().say;
 
 async function startLive(resumePts) {
   if (!('geolocation' in navigator)) { ask('Le GPS n\'est pas disponible dans ce navigateur.', { no: '' }); return; }
@@ -365,6 +372,7 @@ function renderDetail() {
   }).join('') : '<div class="empty">Aucun événement détecté</div>';
   document.querySelectorAll('#dEvents .ev').forEach(el => el.onclick = () => focusEvent(det.ev[+el.dataset.k]));
   document.querySelectorAll('.uL').forEach(e => e.textContent = uLabel());
+  document.querySelectorAll('.binL').forEach(e => e.textContent = binW());
   drawMap(); drawChart(-1); drawHist(); drawRuns(); drawPolar();
 }
 function drawMap() {
@@ -493,27 +501,28 @@ function onTouchChart(id, fn) {
   cv.addEventListener('pointermove', e => { if (e.buttons || e.pointerType === 'touch') go(e); });
 }
 let histGeom = null;
+const binW = () => cfg.unit === 'ms' ? 2 : 5;
 function drawHist(sel = -1) {
   const st = det.st; const { c, W, H } = prep('hist');
   const T = st.T, V = st.V; if (!T || T.length < 3) return;
   const bins = [];
-  for (let i = 1; i < T.length; i++) { const dt = T[i] - T[i - 1]; if (dt > 30) continue; const b = Math.floor(spd(V[i]) / 5); bins[b] = (bins[b] || 0) + dt; }
+  for (let i = 1; i < T.length; i++) { const dt = T[i] - T[i - 1]; if (dt > 30) continue; const b = Math.floor(spd(V[i]) / binW()); bins[b] = (bins[b] || 0) + dt; }
   const nb = bins.length, total = bins.reduce((a, b) => a + (b || 0), 0) || 1, mx = Math.max(...bins.map(b => b || 0));
   const pad = { l: 8, r: 8, t: 16, b: 20 }, w = W - pad.l - pad.r, h = H - pad.t - pad.b, bw = w / nb;
   histGeom = { pad, bw, nb };
   for (let b = 0; b < nb; b++) {
     const val = bins[b] || 0, bh = val / mx * h, x = pad.l + b * bw;
-    c.fillStyle = (b * 5) >= spd(cfg.foil / 3.6) ? '#22d3c5' : '#3b5a6e';
+    c.fillStyle = (b * binW()) >= spd(cfg.foil / 3.6) ? '#22d3c5' : '#3b5a6e';
     if (sel >= 0 && sel !== b) c.globalAlpha = .45;
     c.fillRect(x + 2, pad.t + h - bh, bw - 4, bh); c.globalAlpha = 1;
     c.fillStyle = '#86a6b8'; c.textAlign = 'center';
-    c.fillText(b * 5, x + bw / 2, H - 6);
+    c.fillText(b * binW(), x + bw / 2, H - 6);
     if (sel < 0 && val / total >= 0.03) { c.fillStyle = '#e8f3f8'; c.fillText(Math.round(val / total * 100) + '%', x + bw / 2, pad.t + h - bh - 4); }
   }
   c.textAlign = 'left';
   if (sel >= 0 && sel < nb) {
     const val = bins[sel] || 0, x = pad.l + sel * bw + bw / 2, y = pad.t + h - val / mx * h;
-    const lines = [`${sel * 5} à ${sel * 5 + 5} ${uLabel()}`, `${ft(val)} · ${Math.round(val / total * 100)} % du temps`];
+    const lines = [`${sel * binW()} à ${(sel + 1) * binW()} ${uLabel()}`, `${ft(val)} · ${Math.round(val / total * 100)} % du temps`];
     bubble(c, x, y, lines, W, H); $('histInfo').textContent = lines.join(' · ');
   } else $('histInfo').textContent = 'Touche une barre pour le détail';
 }
