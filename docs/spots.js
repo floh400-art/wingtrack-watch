@@ -82,8 +82,8 @@ function dbStatus(txt) { const el = $('sdbStatus'); if (el) el.textContent = txt
 async function ensureSpotDB() {
   if (SDB.list) { dbStatus(`${SDB.list.length} spots kite / windsurf / wing (OpenStreetMap)`); return SDB.list; }
   dbStatus('Chargement des spots kite / windsurf…');
-  try { const l = await loadSpotDB(); dbStatus(`${l.length} spots kite / windsurf / wing (OpenStreetMap)`); refreshDbMarkers(); return l; }
-  catch (e) { dbStatus('Spots de glisse indisponibles hors ligne'); return []; }
+  try { const l = await loadSpotDB(); SDB.err = false; dbStatus(`${l.length} spots kite / windsurf / wing (OpenStreetMap)`); refreshDbMarkers(); return l; }
+  catch (e) { SDB.err = true; dbStatus('Spots de glisse indisponibles (hors ligne ou serveur OpenStreetMap occupé)'); if (typeof cmDraw === 'function') cmDraw(); return []; }
 }
 
 /* ---------- recherche unifiée ---------- */
@@ -148,18 +148,27 @@ const condModel = () => cfg.cmModel || 'meteofrance_seamless'; // même modèle 
 const ckey = s => condModel() + '|' + s.lat.toFixed(3) + ',' + s.lon.toFixed(3);
 let condBusy = false;
 async function fetchCond(spots) {
-  const need = spots.filter(s => { const c = COND.get(ckey(s)); return !c || Date.now() - c.at > 45 * 60e3; });
-  if (!need.length || condBusy || !navigator.onLine) return false;
+  const TTL = 90 * 60e3;
+  let need = spots.filter(s => { const c = COND.get(ckey(s)); return !c || Date.now() - c.at > TTL; });
+  if (!need.length || condBusy) return false;
   condBusy = true;
+  let got = false;
   try {
+    // cache du téléphone d'abord
+    const mem = await kvGetMany(need.map(s => 'cond|' + ckey(s)));
+    mem.forEach((v, k) => { if (Date.now() - v.at < TTL) { COND.set(k.slice(5), v); got = true; } });
+    need = need.filter(s => { const c = COND.get(ckey(s)); return !c || Date.now() - c.at > TTL; });
+    if (!navigator.onLine) return got;
     for (let i = 0; i < need.length; i += 50) {
       const part = need.slice(i, i + 50);
       let j = await getJSON(`${OM}?latitude=${part.map(s => s.lat.toFixed(3)).join(',')}&longitude=${part.map(s => s.lon.toFixed(3)).join(',')}&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m&forecast_days=7&timezone=auto&models=${condModel()}`);
       if (!Array.isArray(j)) j = [j];
-      j.forEach((x, k) => { if (x && x.hourly) COND.set(ckey(part[k]), { at: Date.now(), off: x.utc_offset_seconds || 0, time: x.hourly.time, ws: x.hourly.wind_speed_10m, wg: x.hourly.wind_gusts_10m, wd: x.hourly.wind_direction_10m }); });
+      const save = [];
+      j.forEach((x, k) => { if (x && x.hourly) { const v = { at: Date.now(), off: x.utc_offset_seconds || 0, time: x.hourly.time, ws: x.hourly.wind_speed_10m, wg: x.hourly.wind_gusts_10m, wd: x.hourly.wind_direction_10m }; COND.set(ckey(part[k]), v); save.push(['cond|' + ckey(part[k]), v]); } });
+      kvSetMany(save); got = true;
     }
-    return true;
-  } catch (e) { return false; } finally { condBusy = false; }
+    return got;
+  } catch (e) { return got; } finally { condBusy = false; }
 }
 // heure affichée : celle du curseur de la carte, sinon maintenant (heure locale du spot)
 function condAt(s, tStr) {

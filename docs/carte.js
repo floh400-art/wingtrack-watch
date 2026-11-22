@@ -16,7 +16,7 @@ function openCarte() {
     const lp = CM.map.createPane ? CM.map.createPane('cmLabels') : null;
     if (lp) { lp.style.zIndex = 450; lp.style.pointerEvents = 'none'; }
     cmBase();
-    CM.field = new WindField(CM.map);
+    CM.field = new WindField(CM.map); CM.field.onLimit = () => cmDraw();
     CM.sc = new SpotCanvas(CM.map); CM.layer = true;
     watchMoves(CM.map);
     // toucher un spot / une balise, sinon : créer un spot ici / prévisions
@@ -81,9 +81,10 @@ function cmDraw() {
     if (map.attributionControl && !map._staAttr) { map.attributionControl.addAttribution(STA_ATTR); map._staAttr = true; }
   }
   CM.sc.set(items);
-  $('cmCount').innerHTML = z < 7
+  const lim = omLimitTxt();
+  $('cmCount').innerHTML = (lim ? `<b style="color:#f59e0b">${lim}</b><br>` : '') + (!SDB.list ? (SDB.err ? '⚠ Liste des spots OpenStreetMap indisponible pour l\'instant (réessai à la prochaine ouverture) · ' : 'Chargement de la liste des spots… · ') : '') + (z < 7
     ? 'Zoome pour voir tous les spots de glisse (tes spots restent affichés)'
-    : `<b style="color:#16a34a">${shown.ok} bons</b>${shown.off ? ` (dont ${shown.off} ⚠ vent de terre)` : ''} · <b style="color:#f59e0b">${shown.mid} moyens</b> · ${shown.no} sans vent · ${list.length} spots`;
+    : `<b style="color:#16a34a">${shown.ok} bons</b>${shown.off ? ` (dont ${shown.off} ⚠ vent de terre)` : ''} · <b style="color:#f59e0b">${shown.mid} moyens</b> · ${shown.no} sans vent · ${list.length} spots`);
   // données manquantes : chargées en arrière-plan (une à la fois), puis un seul redessin
   clearTimeout(CM.lt); CM.lt = setTimeout(() => cmLoad(list), 400);
 }
@@ -98,7 +99,7 @@ async function cmLoad(list) {
   } catch (e) {} finally { CM.loadBusy = false; }
   if (changed) cmDraw();
   // limite gratuite atteinte : on recharge tout seul après la pause
-  if (Date.now() < OM_COOL) { clearTimeout(CM.rt); CM.rt = setTimeout(cmDraw, OM_COOL - Date.now() + 1500); }
+  if (Date.now() < OM_COOL) { clearTimeout(CM.rt); CM.rt = setTimeout(cmDraw, Math.min(30 * 60e3, OM_COOL - Date.now() + 1500)); }
   if (CM.loadAgain) { CM.loadAgain = false; cmLoad(visibleSpots(CM.map, 7, 160)); }
 }
 function cmTap(s) {

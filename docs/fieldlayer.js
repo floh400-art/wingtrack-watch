@@ -54,7 +54,14 @@ class WindField {
       const r0 = Math.floor(S0 / step) - 1, r1 = Math.ceil(N0 / step) + 1, c0 = Math.floor(W0 / step) - 1, c1 = Math.ceil(E0 / step) + 1;
       const pk = (r, c) => `cm|${model}|${step}|${r}|${c}`;
       const need = [];
-      for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) { const v = WM_PTS.get(pk(r, c)); if (!v || Date.now() - v.at > 3600e3) need.push([r, c]); }
+      const TTL = 3 * 3600e3; // les modèles ne changent que quelques fois par jour
+      for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) { const v = WM_PTS.get(pk(r, c)); if (!v || Date.now() - v.at > TTL) need.push([r, c]); }
+      // d'abord le cache du téléphone (gardé entre deux ouvertures de l'appli)
+      if (need.length) {
+        const got = await kvGetMany(need.map(([r, c]) => pk(r, c)));
+        got.forEach((v, k) => { if (Date.now() - v.at < TTL) WM_PTS.set(k, v); });
+        for (let i = need.length - 1; i >= 0; i--) { const v = WM_PTS.get(pk(need[i][0], need[i][1])); if (v && Date.now() - v.at < TTL) need.splice(i, 1); }
+      }
       let err = null;
       for (let i = 0; i < need.length; i += 100) {
         const part = need.slice(i, i + 100);
@@ -63,7 +70,9 @@ class WindField {
         catch (e) { err = e; break; } // on affiche quand même ce qu'on a déjà
         if (model !== (this.model || 'meteofrance_seamless')) return; // modèle changé entre-temps
         if (!Array.isArray(j)) j = [j];
-        j.forEach((x, k) => WM_PTS.set(pk(part[k][0], part[k][1]), { at: Date.now(), h: x && x.hourly }));
+        const save = [];
+        j.forEach((x, k) => { const key = pk(part[k][0], part[k][1]), v = { at: Date.now(), h: x && x.hourly && { time: x.hourly.time, wind_speed_10m: x.hourly.wind_speed_10m, wind_direction_10m: x.hourly.wind_direction_10m } }; WM_PTS.set(key, v); save.push([key, v]); });
+        kvSetMany(save);
       }
       // un point manquant peut venir d'une autre grille (mêmes coordonnées, grilles emboîtées)
       const get = (r, c) => {
@@ -95,8 +104,8 @@ class WindField {
     } catch (e) {
       // limite gratuite atteinte : on réessaie tout seul après la pause (sinon le vent reste en « carré »)
       if (e.message === '429') {
-        if (!this.warned) { this.warned = true; toast('Trop de demandes météo : le vent animé se complète dans 1 min'); }
-        clearTimeout(this.rt); this.rt = setTimeout(() => this.load(), Math.max(5e3, OM_COOL - Date.now() + 1e3));
+        clearTimeout(this.rt); this.rt = setTimeout(() => this.load(), Math.min(30 * 60e3, Math.max(5e3, OM_COOL - Date.now() + 1e3)));
+        if (this.onLimit) this.onLimit();
       }
     }
     finally { this.busy = false; if (this.again) { this.again = false; this.load(); } }

@@ -73,14 +73,52 @@ const hm = ms => new Date(ms).toISOString().slice(11, 16).replace(':', 'h');
 const OM = 'https://api.open-meteo.com/v1/forecast';
 const MAR = 'https://marine-api.open-meteo.com/v1/marine';
 // Open-Meteo gratuit : ~600 appels/min. En cas de refus (429) on se met en pause 65 s pour ne pas aggraver.
-let OM_COOL = 0;
+let OM_COOL = 0, OM_WHY = '';
+try { const c = JSON.parse(localStorage.getItem('wt_omcool') || 'null'); if (c && c.t > Date.now()) { OM_COOL = c.t; OM_WHY = c.w; } } catch (e) {}
 async function getJSON(url) {
   const om = /open-meteo\.com/.test(url);
   if (om && Date.now() < OM_COOL) throw new Error('429');
   const r = await fetch(url);
-  if (r.status === 429 && om) { OM_COOL = Date.now() + 65e3; throw new Error('429'); }
+  if (r.status === 429 && om) {
+    // minute / heure / jour : le service dit quelle limite gratuite est atteinte
+    let why = ''; try { why = (await r.json()).reason || ''; } catch (e) {}
+    const now = new Date();
+    if (/daily/i.test(why)) { OM_COOL = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1) + 60e3; OM_WHY = 'jour'; }
+    else if (/hourly/i.test(why)) { OM_COOL = (Math.floor(Date.now() / 3600e3) + 1) * 3600e3 + 60e3; OM_WHY = 'heure'; }
+    else { OM_COOL = Date.now() + 65e3; OM_WHY = 'minute'; }
+    try { localStorage.setItem('wt_omcool', JSON.stringify({ t: OM_COOL, w: OM_WHY })); } catch (e) {}
+    throw new Error('429');
+  }
   if (!r.ok) throw new Error(r.status);
   return r.json();
+}
+function omLimitTxt() {
+  if (Date.now() >= OM_COOL) return '';
+  const m = Math.ceil((OM_COOL - Date.now()) / 60e3);
+  return `⏳ Limite météo gratuite atteinte (par ${OM_WHY || 'minute'}) : reprise dans ${m < 60 ? m + ' min' : Math.round(m / 60) + ' h'}`;
+}
+/* ---------- cache persistant (IndexedDB) : évite de redemander les mêmes points ---------- */
+const KV = { db: null };
+function kvOpen() {
+  if (KV.db) return KV.db;
+  KV.db = new Promise(res => {
+    try { const q = indexedDB.open('wt_kv', 1); q.onupgradeneeded = () => q.result.createObjectStore('kv'); q.onsuccess = () => res(q.result); q.onerror = () => res(null); }
+    catch (e) { res(null); }
+  });
+  return KV.db;
+}
+async function kvGetMany(keys) {
+  const out = new Map(), db = await kvOpen(); if (!db || !keys.length) return out;
+  return new Promise(res => {
+    try {
+      const st = db.transaction('kv').objectStore('kv'); let n = keys.length;
+      keys.forEach(k => { const q = st.get(k); q.onsuccess = () => { if (q.result) out.set(k, q.result); if (!--n) res(out); }; q.onerror = () => { if (!--n) res(out); }; });
+    } catch (e) { res(out); }
+  });
+}
+async function kvSetMany(entries) {
+  const db = await kvOpen(); if (!db || !entries.length) return;
+  try { const tx = db.transaction('kv', 'readwrite'), st = tx.objectStore('kv'); entries.forEach(([k, v]) => st.put(v, k)); } catch (e) {}
 }
 async function fetchAll(spot) {
   const ll = `latitude=${spot.lat.toFixed(4)}&longitude=${spot.lon.toFixed(4)}&timezone=auto&forecast_days=7`;
