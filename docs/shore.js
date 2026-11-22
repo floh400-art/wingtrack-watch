@@ -1,0 +1,103 @@
+'use strict';
+/* =========================================================================
+   WingTrack — Orientation des plages et vent on-shore / off-shore
+   Orientation auto : trait de côte OpenStreetMap (natural=coastline : la terre
+   est à gauche du sens de tracé, la mer à droite) ; plans d'eau en secours.
+   Réglage manuel possible pour chaque spot enregistré.
+   ========================================================================= */
+const SHORE = (() => { try { return JSON.parse(localStorage.getItem('wt_shore') || '{}'); } catch (e) { return {}; } })();
+const shKey = s => s.lat.toFixed(3) + ',' + s.lon.toFixed(3);
+const saveShore = () => { try { localStorage.setItem('wt_shore', JSON.stringify(SHORE)); } catch (e) {} };
+const SH_PENDING = new Map();
+
+// direction de la mer vue depuis la plage (°), null si inconnue
+function shoreOf(s) {
+  if (!s) return null;
+  const f = favs().find(x => sameSpot(x, s));
+  if (f && f.shore != null && f.shore !== '') return +f.shore;
+  const v = SHORE[shKey(s)];
+  return v == null || v < 0 ? null : v;
+}
+// classement du vent (d'où il vient) par rapport à la mer
+const SIDES = {
+  on: { l: 'On-shore', s: 'on', c: '#22c55e', d: 'vent de mer' },
+  sideon: { l: 'Side-on', s: 's-on', c: '#22c55e', d: 'de travers, vers la plage' },
+  side: { l: 'Side-shore', s: 'side', c: '#a3e635', d: 'parallèle à la plage' },
+  sideoff: { l: 'Side-off', s: 's-off', c: '#f59e0b', d: 'prudence : tend à t\'éloigner' },
+  off: { l: 'Off-shore', s: 'OFF', c: '#ef4444', d: 'vent de terre : dangereux en cas de casse' },
+};
+function sideOf(windFrom, shore) {
+  if (windFrom == null || shore == null) return null;
+  let a = Math.abs(((windFrom - shore) % 360 + 540) % 360 - 180);
+  return a <= 30 ? 'on' : a <= 70 ? 'sideon' : a <= 110 ? 'side' : a <= 150 ? 'sideoff' : 'off';
+}
+
+/* ---------- calcul depuis OpenStreetMap ---------- */
+function shoreFromElements(s, els) {
+  const lat0 = s.lat * Math.PI / 180, mx = lon => (lon - s.lon) * 111320 * Math.cos(lat0), my = lat => (lat - s.lat) * 110540;
+  let best = null;
+  els.forEach(e => {
+    if (!e.tags || e.tags.natural !== 'coastline' || !e.geometry) return;
+    const g = e.geometry;
+    for (let i = 0; i + 1 < g.length; i++) {
+      const ax = mx(g[i].lon), ay = my(g[i].lat), bx = mx(g[i + 1].lon), by = my(g[i + 1].lat);
+      const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / L2));
+      const px = ax + t * dx, py = ay + t * dy, d = Math.hypot(px, py);
+      if (!best || d < best.d) best = { d, br: (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360 };
+    }
+  });
+  if (best && best.d < 4000) return (best.br + 90) % 360; // mer à droite du tracé
+  // plan d'eau (lac) : direction du centre du plan d'eau le plus proche
+  let lake = null;
+  els.forEach(e => {
+    if (!e.tags || e.tags.natural !== 'water') return;
+    const pts = e.geometry || (e.members || []).flatMap(m => m.geometry || []);
+    if (!pts.length) return;
+    const cx = pts.reduce((a, p) => a + p.lon, 0) / pts.length, cy = pts.reduce((a, p) => a + p.lat, 0) / pts.length;
+    const d = Math.min(...pts.map(p => Math.hypot(mx(p.lon), my(p.lat))));
+    if (!lake || d < lake.d) lake = { d, br: (Math.atan2(mx(cx), my(cy)) * 180 / Math.PI + 360) % 360 };
+  });
+  return lake && lake.d < 2500 ? lake.br : -1;
+}
+async function overpass(q) {
+  for (const url of OVERPASS) {
+    try {
+      const r = await fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+      if (r.ok) return await r.json();
+    } catch (e) {}
+  }
+  throw new Error('Overpass indisponible');
+}
+async function ensureShore(s) {
+  const k = shKey(s);
+  if (SHORE[k] != null || !navigator.onLine) return shoreOf(s);
+  if (SH_PENDING.has(k)) return SH_PENDING.get(k);
+  const p = (async () => {
+    try {
+      const j = await overpass(`[out:json][timeout:25];(way["natural"="coastline"](around:4000,${s.lat},${s.lon});way["natural"="water"](around:2500,${s.lat},${s.lon});relation["natural"="water"](around:2500,${s.lat},${s.lon}););out geom;`);
+      SHORE[k] = Math.round(shoreFromElements(s, j.elements || [])); saveShore();
+    } catch (e) { /* on réessaiera plus tard */ }
+    SH_PENDING.delete(k);
+    return shoreOf(s);
+  })();
+  SH_PENDING.set(k, p);
+  return p;
+}
+// tous les spots visibles d'une carte, en une requête (trait de côte de la zone)
+const SH_AREAS = new Set();
+async function ensureShoreArea(map, spots) {
+  if (!map || map.getZoom() < 9 || !navigator.onLine) return false;
+  const todo = spots.filter(s => SHORE[shKey(s)] == null);
+  if (!todo.length) return false;
+  const b = map.getBounds(), key = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map(x => x.toFixed(2)).join(',');
+  if (SH_AREAS.has(key)) return false;
+  SH_AREAS.add(key);
+  const S = Math.min(...todo.map(s => s.lat)) - 0.04, N = Math.max(...todo.map(s => s.lat)) + 0.04, W = Math.min(...todo.map(s => s.lon)) - 0.06, E = Math.max(...todo.map(s => s.lon)) + 0.06;
+  try {
+    const j = await overpass(`[out:json][timeout:40];(way["natural"="coastline"](${S},${W},${N},${E});way["natural"="water"](${S},${W},${N},${E}););out geom;`);
+    todo.forEach(s => { SHORE[shKey(s)] = Math.round(shoreFromElements(s, j.elements || [])); });
+    saveShore(); return true;
+  } catch (e) { SH_AREAS.delete(key); return false; }
+}
+const sideTag = side => side ? `<span class="sidetag" style="color:${SIDES[side].c}">${side === 'off' ? '⚠ ' : ''}${SIDES[side].l}</span>` : '';

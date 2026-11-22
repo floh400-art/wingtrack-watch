@@ -1,5 +1,5 @@
-const V = 'wingtrack-v10';
-const SHELL = ['./', 'index.html', 'app.js', 'stats.js', 'manifest.webmanifest', 'icon-192.png', 'meteo.js', 'carnet.js', 'wmap.js', 'replay.js', 'spots.js',
+const V = 'wingtrack-v11';
+const SHELL = ['./', 'index.html', 'app.js', 'stats.js', 'manifest.webmanifest', 'icon-192.png', 'meteo.js', 'carnet.js', 'wmap.js', 'replay.js', 'spots.js', 'shore.js',
   'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css',
   'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(V).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });

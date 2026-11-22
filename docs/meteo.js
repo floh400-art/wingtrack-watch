@@ -169,7 +169,9 @@ function slots(d, model) {
     if (s0 >= 0 && i - s0 >= 2) {
       const ws = m.ws.slice(s0, i).map(kn), gs = m.wg.slice(s0, i).map(kn), dirs = m.wd.slice(s0, i);
       const mid = dirs[Math.floor(dirs.length / 2)];
-      res.push({ day: m.time[s0].slice(0, 10), from: m.time[s0], to: m.time[i - 1], hours: i - s0, wmin: Math.min(...ws), wmax: Math.max(...ws), gmax: Math.max(...gs.filter(x => x != null), 0), dir: mid });
+      const sh = typeof shoreOf === 'function' ? shoreOf(M.spot) : null;
+      const sides = sh == null ? [] : dirs.map(d => sideOf(d, sh));
+      res.push({ day: m.time[s0].slice(0, 10), from: m.time[s0], to: m.time[i - 1], hours: i - s0, wmin: Math.min(...ws), wmax: Math.max(...ws), gmax: Math.max(...gs.filter(x => x != null), 0), dir: mid, side: sides.includes('off') ? 'off' : sides.includes('sideoff') ? 'sideoff' : sides[Math.floor(sides.length / 2)] || null });
     }
     s0 = -1;
   }
@@ -184,8 +186,10 @@ async function renderMeteo(force) {
   await renderSpotChips();
   renderModelBar();
   if (!M.spot) { $('mxBody').innerHTML = '<div class="empty">Choisis un spot : une de tes sessions, ta position, une recherche ou la carte.</div>'; showSpotMap(); return; }
+  if (typeof ensureShore === 'function' && M.shoreAsked !== shKey(M.spot)) { M.shoreAsked = shKey(M.spot); ensureShore(M.spot).then(v => { if (v != null && M.data) drawMeteo(); }); }
   $('mxSpot').innerHTML = `${esc(M.spot.name)} <button class="star ${isFav(M.spot) ? 'on' : ''}" id="mxFav">${isFav(M.spot) ? '★' : '☆'}</button>`;
   $('mxFav').onclick = toggleFav;
+  paintShore();
   const key = 'wt_fc_' + M.spot.lat.toFixed(3) + ',' + M.spot.lon.toFixed(3);
   if (!M.data || M.data.key !== key || force || Date.now() - M.data.fetched > 30 * 60e3) {
     // prévision en cache (utile au spot sans réseau)
@@ -203,8 +207,14 @@ async function renderMeteo(force) {
   drawMeteo();
   showSpotMap();
 }
+function paintShore() {
+  if (!M.spot || !$('mxShore')) return;
+  const shv = typeof shoreOf === 'function' ? shoreOf(M.spot) : null;
+  $('mxShore').innerHTML = shv != null ? `🏖️ Plage face ${dirName(shv)} (mer vers ${Math.round(shv)}°) · vent du ${dirName(shv)} = on-shore, du ${dirName((shv + 180) % 360)} = off-shore ⚠` : '<small>Orientation de la plage : recherche en cours ou inconnue (réglable dans ⋯ d\'un spot enregistré)</small>';
+}
 function drawMeteo() {
   const d = M.data; if (!d) return;
+  paintShore();
   ensureAvg(d);
   const ageMin = Math.round((Date.now() - d.fetched) / 60000);
   $('mxStatus').textContent = `Mis à jour ${ageMin < 1 ? 'à l\'instant' : 'il y a ' + (ageMin < 60 ? ageMin + ' min' : Math.round(ageMin / 60) + ' h')} · ${Object.keys(d.models).filter(id => id !== 'avg').length} modèles · Open-Meteo`;
@@ -214,7 +224,7 @@ function drawMeteo() {
   if (M.day >= days.length) M.day = 0;
   // créneaux
   const sl = slots(d, M.model === 'compare' ? 'avg' : M.model);
-  const slHtml = sl.length ? sl.slice(0, 5).map(s => `<div class="slot" data-day="${days.indexOf(s.day)}"><b>${dayLabel(s.day)}</b> ${hh(s.from)}–${+s.to.slice(11, 13) + 1}h <span class="grow"></span><span class="pill" style="background:${windColor(s.wmax * KN)};color:${windTxt(s.wmax * KN)}">${Math.round(wv(s.wmin * KN))}–${Math.round(wv(s.wmax * KN))} ${wUnit()}</span> ${arrow(s.dir)} ${dirName(s.dir)}</div>`).join('')
+  const slHtml = sl.length ? sl.slice(0, 5).map(s => `<div class="slot" data-day="${days.indexOf(s.day)}"><b>${dayLabel(s.day)}</b> ${hh(s.from)}–${+s.to.slice(11, 13) + 1}h <span class="grow"></span><span class="pill" style="background:${windColor(s.wmax * KN)};color:${windTxt(s.wmax * KN)}">${Math.round(wv(s.wmin * KN))}–${Math.round(wv(s.wmax * KN))} ${wUnit()}</span> ${arrow(s.dir)} ${dirName(s.dir)} ${typeof sideTag === 'function' ? sideTag(s.side) : ''}</div>`).join('')
     : `<div class="cap" style="margin:0">Aucun créneau entre ${Math.round(wv(cfg.wmin * KN))} et ${Math.round(wv(cfg.wmax * KN))} ${wUnit()} en journée sur 7 jours.</div>`;
   const tex = d.hasTide ? tideExtrema(d.marine.ttime, d.marine.tide) : [];
   const day = days[M.day];
@@ -269,6 +279,8 @@ function tableHtml(d, day) {
     rows += row(`Vent<small>${wUnit()}</small>`, t => windCell(mk, t));
     rows += row('Rafales', t => windCell({ ws: mk.wg, time: mk.time }, t));
     rows += row('Dir.', t => { const dd = at(mk.wd, mk.time, t); return `<td class="${cls(t)}">${arrow(dd)}<small>${dirName(dd)}</small></td>`; });
+    const shore = typeof shoreOf === 'function' ? shoreOf(M.spot) : null;
+    if (shore != null) rows += row('Plage', t => { const sd = sideOf(at(mk.wd, mk.time, t), shore); return `<td class="${cls(t)}" style="color:${sd ? SIDES[sd].c : ''};font-weight:700;font-size:11px">${sd ? SIDES[sd].s : ''}</td>`; });
     if (M.model === 'avg') rows += row(`Écart<small>${wUnit()}</small>`, t => { const v = at(mk.spread, mk.time, t); const k = v == null ? null : kn(v); return `<td class="${cls(t)}" style="color:${k == null ? '' : k < 4 ? '#7ccf3c' : k < 8 ? '#e6d23a' : '#ec4b4b'}">${v == null ? '–' : '±' + Math.round(wv(v) / 2)}</td>`; });
   } else {
     modelIds(d).forEach(id => {
@@ -466,12 +478,14 @@ async function createSpot(lat, lon, suggested) {
 async function editSpot(k) {
   const f = favs()[k]; if (!f) return;
   let del = false;
-  const p = ask(`Spot « ${f.name} »`, { ok: 'Renommer', extra: `<input type="text" id="esName" value="${esc(f.name)}" style="margin-bottom:10px"><button class="btn red" id="esDel" style="width:100%;margin-bottom:14px">Supprimer ce spot</button>` });
+  const auto = SHORE[shKey(f)];
+  const opts = `<option value="">Auto${auto != null && auto >= 0 ? ' (mer au ' + dirName(auto) + ')' : ''}</option>` + DIRS.map((d, k) => `<option value="${k * 22.5}" ${f.shore != null && f.shore !== '' && Math.round(f.shore / 22.5) % 16 === k ? 'selected' : ''}>Mer au ${d}</option>`).join('');
+  const p = ask(`Spot « ${f.name} »`, { ok: 'Enregistrer', extra: `<input type="text" id="esName" value="${esc(f.name)}" style="margin-bottom:10px"><label class="cap" style="display:block;margin:0 0 4px">Orientation de la plage (côté mer)</label><select id="esShore" class="selx">${opts}</select><button class="btn red" id="esDel" style="width:100%;margin-bottom:14px">Supprimer ce spot</button>` });
   $('esDel').onclick = () => { del = true; $('mNo').click(); };
   const ok = await p;
   const list = favs().slice();
   if (del) { list.splice(k, 1); saveSpots(list); toast('Spot supprimé'); }
-  else if (ok) { list[k] = { ...f, name: $('esName').value.trim() || f.name }; saveSpots(list); if (sameSpot(M.spot, f)) { M.spot.name = list[k].name; cfg.meteoSpot = M.spot; saveCfg(); } }
+  else if (ok) { list[k] = { ...f, name: $('esName').value.trim() || f.name, shore: $('esShore').value === '' ? null : +$('esShore').value }; saveSpots(list); if (sameSpot(M.spot, f)) { M.spot.name = list[k].name; cfg.meteoSpot = M.spot; saveCfg(); } }
   renderMeteo();
 }
 function hereThen(fn) {
@@ -509,7 +523,8 @@ async function renderSpotList() {
   if (!list.length) { $('mxSpotList').innerHTML = '<div class="empty" style="padding:16px">Crée tes spots pour les consulter d\'un coup d\'œil : bouton « + Créer un spot », l\'étoile ☆ d\'un spot, ou touche la carte.</div>'; return; }
   const card = (s, k, q) => {
     const sm = q ? quickSummary(q) : null;
-    const nowTxt = sm && sm.w != null ? `<span class="pill" style="background:${windColor(sm.w)};color:${windTxt(sm.w)}">${wf(sm.w)}</span><small> raf. ${wf(sm.g)} ${wUnit()}</small> ${arrow(sm.d)}<small>${dirName(sm.d)}</small>` : '<small>…</small>';
+    const sd = sm && typeof sideOf === 'function' ? sideOf(sm.d, shoreOf(s)) : null;
+    const nowTxt = sm && sm.w != null ? `<span class="pill" style="background:${windColor(sm.w)};color:${windTxt(sm.w)}">${wf(sm.w)}</span><small> raf. ${wf(sm.g)} ${wUnit()}</small> ${arrow(sm.d)}<small>${dirName(sm.d)}</small> ${sideTag(sd)}` : '<small>…</small>';
     const nx = sm ? (sm.next ? `✅ ${sm.next === quickNowKey(q) ? 'Navigable maintenant' : 'Navigable ' + dayLabel(sm.next.slice(0, 10)) + ' ' + hh(sm.next)}` : '— pas de créneau sur 3 j') : '';
     return `<div class="scard ${M.spot && sameSpot(s, M.spot) ? 'on' : ''}" data-k="${k}"><div class="row"><b class="grow">${esc(s.name)}</b><button class="dots" data-e="${k}">⋯</button></div><div class="snow">${nowTxt}</div><div class="snext">${nx}</div></div>`;
   };

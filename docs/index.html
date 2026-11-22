@@ -213,10 +213,16 @@ textarea{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line)
 .sres-h{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--mut);padding:10px 12px 4px;font-weight:700}
 .sres{cursor:pointer}.sres .sico{width:26px;text-align:center;font-size:18px}.sres small{display:block;color:var(--mut);font-size:12px;margin-top:1px}.sres .sgo{color:var(--mut);font-size:20px}
 .dbmk{width:22px;height:22px;border-radius:11px;background:rgba(255,255,255,.92);display:flex;align-items:center;justify-content:center;font-size:12px;box-shadow:0 1px 3px rgba(0,0,0,.5)}
-.cmk{width:18px;height:18px;border-radius:50%;border:2px solid #fff;box-sizing:border-box;box-shadow:0 1px 4px rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center}
+.cmk{position:relative;width:18px;height:18px;border-radius:50%;border:2px solid #fff;box-sizing:border-box;box-shadow:0 1px 4px rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center}
 .cmk.ok{width:30px;height:30px;background:#16a34a}.cmk.ok svg{width:20px;height:20px;fill:#fff;stroke:#fff}
 .cmk.mid{background:#f59e0b}.cmk.no{background:#111}.cmk.un{background:rgba(255,255,255,.9);font-size:10px;border-color:rgba(0,0,0,.2)}
 .condleg{display:flex;gap:12px;font-size:12px;color:var(--mut);margin-top:6px;flex-wrap:wrap}.condleg i{display:inline-block;width:10px;height:10px;border-radius:5px;margin-right:4px;border:1px solid #fff;vertical-align:-1px}
+.cmk.soff{box-shadow:0 0 0 3px #f59e0b,0 1px 4px rgba(0,0,0,.6)}
+.cmk.off{box-shadow:0 0 0 3px #ef4444,0 1px 4px rgba(0,0,0,.6);position:relative}
+.cmk b{position:absolute;top:-9px;right:-9px;background:#ef4444;color:#fff;border-radius:9px;font-size:10px;width:17px;height:17px;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff}
+.cmk.mid.off{position:relative}
+.sidetag{font-size:11px;font-weight:800;white-space:nowrap}
+.selx{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--txt);font:inherit;margin-bottom:14px}
 </style>
 </head>
 <body>
@@ -366,6 +372,7 @@ textarea{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line)
   <div class="spotgrid" id="mxSpotList"></div>
   <div class="chips" id="mxChips" style="margin-top:12px"></div>
   <h1 class="spotname" id="mxSpot"></h1>
+  <p class="cap" id="mxShore" style="margin:-6px 0 12px"></p>
   <div class="seg scroll" id="mxModels"></div>
   <div id="mxBody"></div>
   <h2>Carte</h2>
@@ -373,7 +380,7 @@ textarea{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line)
   <div class="seg" id="mxLayer" style="margin-bottom:8px"></div>
   <div id="mxMap"></div>
   <div id="mxTimeBox" class="timebox"><input type="range" id="mxTime" min="0" max="167" value="0"><div class="cap tip" id="mxTimeLbl"></div></div>
-  <div class="condleg"><span><i style="background:#16a34a"></i>Bon (voile)</span><span><i style="background:#f59e0b"></i>Moyen</span><span><i style="background:#111"></i>Rien</span><span>selon ta plage de vent, à l'heure du curseur</span></div>
+  <div class="condleg"><span><i style="background:#16a34a"></i>Bon (voile)</span><span><i style="background:#f59e0b"></i>Moyen</span><span><i style="background:#111"></i>Rien</span><span><i style="background:#16a34a;box-shadow:0 0 0 2px #ef4444"></i>⚠ vent de terre</span><span><i style="background:#16a34a;box-shadow:0 0 0 2px #f59e0b"></i>side-off</span><span>selon ta plage de vent, à l'heure du curseur</span></div>
   <p class="cap">Touche la carte pour le vent, les vagues et la houle à cet endroit · fais glisser le curseur pour changer l'heure · ★ tes spots, 🏄 tes spots de session</p>
 </section>
 
@@ -435,5 +442,6 @@ textarea{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line)
 <script src="wmap.js"></script>
 <script src="replay.js"></script>
 <script src="spots.js"></script>
+<script src="shore.js"></script>
 </body>
 </html>

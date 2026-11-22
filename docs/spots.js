@@ -153,9 +153,10 @@ function rateCond(c) {
   return 'no';
 }
 const SAIL = '<svg viewBox="0 0 24 24"><path d="M3.5 17.5C5 9 11 4 20.5 3c-3 4.5-3.6 9.6-2 15.5-4.8-2.6-10-2.9-15-1z"/><path d="M5 19.5l13-2" stroke-width="1.6" fill="none"/></svg>';
-function condHtml(r, s) {
-  if (r === 'ok') return `<div class="cmk ok">${SAIL}</div>`;
-  if (r === 'mid') return `<div class="cmk mid"></div>`;
+function condHtml(r, s, side) {
+  const w = side === 'off' ? ' off' : side === 'sideoff' ? ' soff' : '';
+  if (r === 'ok') return `<div class="cmk ok${w}">${SAIL}${side === 'off' ? '<b>⚠</b>' : ''}</div>`;
+  if (r === 'mid') return `<div class="cmk mid${w}">${side === 'off' ? '<b>⚠</b>' : ''}</div>`;
   if (r === 'no') return `<div class="cmk no"></div>`;
   return `<div class="cmk un">${s.icon || ''}</div>`;
 }
@@ -181,16 +182,17 @@ function drawDbSpots(map, layer, onTap, tStr) {
   layer.clearLayers();
   const list = visibleSpots(map);
   list.forEach(s => {
-    const c = condAt(s, tStr), r = rateCond(c);
+    const c = condAt(s, tStr), r = rateCond(c), side = c ? sideOf(c.d, shoreOf(s)) : null;
     const sz = r === 'ok' ? 30 : 18;
-    const icon = L.divIcon({ className: '', html: condHtml(r, s), iconSize: [sz, sz], iconAnchor: [sz / 2, sz / 2] });
-    const tip = `${esc(s.name)}${c && c.w != null ? ` · ${wf(c.w)} (raf. ${wf(c.g)}) ${wUnit()} ${dirName(c.d)}` : ''}`;
+    const icon = L.divIcon({ className: '', html: condHtml(r, s, side), iconSize: [sz, sz], iconAnchor: [sz / 2, sz / 2] });
+    const tip = `${esc(s.name)}${c && c.w != null ? ` · ${wf(c.w)} (raf. ${wf(c.g)}) ${wUnit()} ${dirName(c.d)}` : ''}${side ? ` · ${SIDES[side].l}${side === 'off' ? ' ⚠ ' + SIDES[side].d : ''}` : ''}`;
     L.marker([s.lat, s.lon], { icon, zIndexOffset: s.fav ? 900 : r === 'ok' ? 700 : 300 }).addTo(layer)
       .bindTooltip(tip, s.fav ? { permanent: true, direction: 'right', offset: [10, 0], className: 'stip' } : { direction: 'top', offset: [0, -10] })
       .on('click', ev => { L.DomEvent.stopPropagation(ev); onTap(s); });
   });
-  // charge les conditions manquantes puis redessine
+  // charge les conditions et l'orientation des plages manquantes puis redessine
   fetchCond(list).then(changed => { if (changed) drawDbSpots(map, layer, onTap, tStr); });
+  if (typeof ensureShoreArea === 'function') ensureShoreArea(map, list).then(changed => { if (changed) drawDbSpots(map, layer, onTap, tStr); });
 }
 const mxTimeStr = () => (M.field !== 'off' && typeof fieldTime === 'function' && fieldTime()) || null;
 const wmTimeStr = () => (WM.grid ? WM.grid.T[WM.t] : null);
