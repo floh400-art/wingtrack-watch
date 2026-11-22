@@ -126,6 +126,25 @@ table.fc tr.sep td,table.fc tr.sep th{border-top:2px solid var(--line)}
 .tides{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:13px;margin-top:10px;color:var(--mut)}
 .tides b{color:#60a5fa}
 #mxQ{margin-bottom:0}
+#mxMap{height:400px}
+.spotgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.scard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 12px;cursor:pointer}
+.scard.on{border-color:var(--acc)}
+.scard b{font-size:14px}.scard .dots{background:none;color:var(--mut);font-size:18px;padding:0 2px;line-height:1}
+.snow{margin-top:6px;font-size:13px}.snow .pill{font-size:15px}
+.snext{margin-top:6px;font-size:11px;color:var(--mut)}
+.chip2.add{border-color:var(--acc);color:var(--acc)}
+.smk{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;border:2px solid #fff;box-sizing:border-box;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+.smk.fav{background:#ffd166;color:#06141f}.smk.cur{background:var(--acc);color:#06141f;transform:scale(1.2)}.smk.ses{background:#0d2231;font-size:12px}
+.leaflet-tooltip.stip{background:rgba(6,20,31,.85);color:#fff;border:0;font-weight:700;font-size:11px;padding:2px 6px;box-shadow:none}
+.leaflet-tooltip.stip:before{display:none}
+.fa{width:40px;height:44px;display:flex;flex-direction:column;align-items:center;pointer-events:none}
+.fa svg{width:22px;height:22px;fill:#fff;stroke:#06141f;stroke-width:1.5;filter:drop-shadow(0 1px 2px rgba(0,0,0,.7))}
+.fa b{color:var(--c);font-size:18px}
+.fa i{font-style:normal;font-size:11px;font-weight:800;color:var(--t);background:var(--c);box-shadow:0 0 0 1px rgba(6,20,31,.6);border-radius:6px;padding:0 4px;margin-top:1px;line-height:1.3;text-align:center}
+.fa i small{display:block;font-size:9px;font-weight:600;opacity:.85}
+.timebox{margin-top:8px}.timebox input{width:100%;accent-color:var(--acc)}
+.pop .arr{font-size:14px}
 </style>
 </head>
 <body>
@@ -213,14 +232,18 @@ table.fc tr.sep td,table.fc tr.sep th{border-top:2px solid var(--line)}
 <section id="meteo" class="view">
   <div class="row"><h1 class="grow">Météo</h1><button class="btn small" id="mxRefresh">↻</button></div>
   <p class="sub" id="mxStatus"></p>
-  <div class="chips" id="mxChips"></div>
+  <h2 style="margin-top:6px">Mes spots</h2>
+  <div class="spotgrid" id="mxSpotList"></div>
+  <div class="chips" id="mxChips" style="margin-top:12px"></div>
   <div id="mxSearch" style="display:none"><input type="text" id="mxQ" placeholder="Ville, plage, spot…" autocomplete="off"><div id="mxRes" class="evlist" style="margin-top:8px"></div></div>
   <h1 class="spotname" id="mxSpot"></h1>
   <div class="seg scroll" id="mxModels"></div>
   <div id="mxBody"></div>
   <h2>Carte</h2>
+  <div class="seg" id="mxLayer" style="margin-bottom:8px"></div>
   <div id="mxMap"></div>
-  <p class="cap">Touche la carte pour voir les prévisions d'un autre endroit</p>
+  <div id="mxTimeBox" class="timebox"><input type="range" id="mxTime" min="0" max="167" value="0"><div class="cap tip" id="mxTimeLbl"></div></div>
+  <p class="cap">Touche la carte pour le vent, les vagues et la houle à cet endroit · fais glisser le curseur pour changer l'heure · ★ tes spots, 🏄 tes spots de session</p>
 </section>
 
 <!-- IMPORT -->

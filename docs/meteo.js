@@ -4,14 +4,15 @@
    Données : Open-Meteo (gratuit, sans clé) — forecast, marine, geocoding
    ========================================================================= */
 const MODELS = [
+  { id: 'avg', name: 'Moyenne', desc: 'moyenne des modèles disponibles (direction moyennée en vecteur)' },
   { id: 'meteofrance_seamless', name: 'AROME', desc: 'Météo-France · 1,3 km (puis ARPEGE)' },
   { id: 'icon_seamless', name: 'ICON', desc: 'DWD Allemagne · 2 à 7 km' },
   { id: 'ecmwf_ifs025', name: 'ECMWF', desc: 'Centre européen · 25 km' },
   { id: 'gfs_seamless', name: 'GFS', desc: 'NOAA États-Unis · 13 à 25 km' },
   { id: 'ukmo_seamless', name: 'UKMO', desc: 'Met Office · 2 à 10 km' },
 ];
-const MCOL = { meteofrance_seamless: '#22d3c5', icon_seamless: '#ffb84d', ecmwf_ifs025: '#60a5fa', gfs_seamless: '#c084fc', ukmo_seamless: '#a3e635' };
-const M = { spot: null, model: cfg.meteoModel || 'meteofrance_seamless', day: 0, data: null, loading: false, map: null, mk: null, chartGeom: null, tideGeom: null };
+const MCOL = { avg: '#ffffff', meteofrance_seamless: '#22d3c5', icon_seamless: '#ffb84d', ecmwf_ifs025: '#60a5fa', gfs_seamless: '#c084fc', ukmo_seamless: '#a3e635' };
+const M = { spot: null, model: cfg.meteoModel || 'avg', day: 0, data: null, loading: false, map: null, mk: null, chartGeom: null, tideGeom: null };
 if (cfg.wmin == null) cfg.wmin = 12;
 if (cfg.wmax == null) cfg.wmax = 30;
 
@@ -58,13 +59,14 @@ async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new E
 async function fetchAll(spot) {
   const ll = `latitude=${spot.lat.toFixed(4)}&longitude=${spot.lon.toFixed(4)}&timezone=auto&forecast_days=7`;
   const hv = 'wind_speed_10m,wind_gusts_10m,wind_direction_10m,temperature_2m,weather_code,precipitation';
-  const reqs = MODELS.map(m => getJSON(`${OM}?${ll}&hourly=${hv}&daily=sunrise,sunset&models=${m.id}`).then(j => [m.id, j]).catch(() => [m.id, null]));
+  const SRC = MODELS.filter(m => m.id !== 'avg');
+  const reqs = SRC.map(m => getJSON(`${OM}?${ll}&hourly=${hv}&daily=sunrise,sunset&models=${m.id}`).then(j => [m.id, j]).catch(() => [m.id, null]));
   const waves = getJSON(`${MAR}?${ll}&hourly=wave_height,wave_direction,wave_period,swell_wave_height,swell_wave_period,swell_wave_direction`).catch(() => null);
   const tide = getJSON(`${MAR}?${ll}&hourly=sea_level_height_msl,sea_surface_temperature`).catch(() => null);
   const res = await Promise.all([...reqs, waves, tide]);
   const models = {};
   let daily = null, offset = 0, time = null;
-  res.slice(0, MODELS.length).forEach(([id, j]) => {
+  res.slice(0, SRC.length).forEach(([id, j]) => {
     if (!j || !j.hourly || !j.hourly.time) return;
     const h = j.hourly;
     if (!h.wind_speed_10m || h.wind_speed_10m.every(v => v == null)) return;
@@ -74,7 +76,7 @@ async function fetchAll(spot) {
     offset = j.utc_offset_seconds || offset;
   });
   if (!time) throw new Error('Aucun modèle disponible');
-  const wj = res[MODELS.length], tj = res[MODELS.length + 1];
+  const wj = res[SRC.length], tj = res[SRC.length + 1];
   const marine = {};
   if (wj && wj.hourly) { const h = wj.hourly; Object.assign(marine, { time: h.time, wh: h.wave_height, wp: h.wave_period, wdir: h.wave_direction, sh: h.swell_wave_height, sp: h.swell_wave_period, sd: h.swell_wave_direction }); }
   if (tj && tj.hourly) { const h = tj.hourly; marine.ttime = h.time; marine.tide = h.sea_level_height_msl; marine.sst = h.sea_surface_temperature; }
@@ -82,6 +84,33 @@ async function fetchAll(spot) {
   const hasTide = marine.tide && marine.tide.some(v => v != null);
   return { models, time, daily, offset, marine, hasWaves, hasTide, fetched: Date.now() };
 }
+// modèle "Moyenne" : moyenne des modèles dispo à chaque heure ; direction en moyenne vectorielle
+function ensureAvg(d) {
+  const ids = Object.keys(d.models).filter(id => id !== 'avg');
+  if (!ids.length) return;
+  const maps = ids.map(id => idxMap(d.models[id].time));
+  const ws = [], wg = [], wd = [], temp = [], code = [], rain = [], spread = [];
+  d.time.forEach(t => {
+    let sw = 0, sg = 0, ng = 0, n = 0, x = 0, y = 0, st = 0, nt = 0, sr = 0, nr = 0, lo = Infinity, hi = -Infinity, cd = null;
+    ids.forEach((id, k) => {
+      const m = d.models[id], i = maps[k].get(t); if (i == null) return;
+      const w = m.ws[i]; if (w == null) return;
+      sw += w; n++; lo = Math.min(lo, w); hi = Math.max(hi, w);
+      if (m.wg[i] != null) { sg += m.wg[i]; ng++; }
+      if (m.wd[i] != null) { const a = m.wd[i] * Math.PI / 180; x += Math.sin(a) * w; y += Math.cos(a) * w; }
+      if (m.temp[i] != null) { st += m.temp[i]; nt++; }
+      if (m.rain[i] != null) { sr += m.rain[i]; nr++; }
+      if (cd == null && m.code[i] != null) cd = m.code[i];
+    });
+    ws.push(n ? sw / n : null); wg.push(ng ? sg / ng : null);
+    wd.push(n ? (Math.atan2(x, y) * 180 / Math.PI + 360) % 360 : null);
+    temp.push(nt ? st / nt : null); rain.push(nr ? sr / nr : null); code.push(cd);
+    spread.push(n > 1 ? hi - lo : null);
+  });
+  d.models.avg = { time: d.time, ws, wg, wd, temp, code, rain, spread, n: ids.length };
+}
+const modelIds = d => ['avg', ...Object.keys(d.models).filter(id => id !== 'avg')].filter(id => d.models[id]);
+const mName = id => (MODELS.find(m => m.id === id) || { name: id }).name;
 // valeur d'une série à l'heure t (les modèles n'ont pas tous la même grille)
 function at(series, times, t) { if (!series || !times) return null; const i = times.indexOf(t); return i < 0 ? null : series[i]; }
 function idxMap(times) { const m = new Map(); (times || []).forEach((t, i) => m.set(t, i)); return m; }
@@ -157,14 +186,15 @@ async function renderMeteo(force) {
 }
 function drawMeteo() {
   const d = M.data; if (!d) return;
+  ensureAvg(d);
   const ageMin = Math.round((Date.now() - d.fetched) / 60000);
-  $('mxStatus').textContent = `Mis à jour ${ageMin < 1 ? 'à l\'instant' : 'il y a ' + (ageMin < 60 ? ageMin + ' min' : Math.round(ageMin / 60) + ' h')} · ${Object.keys(d.models).length} modèles · Open-Meteo`;
+  $('mxStatus').textContent = `Mis à jour ${ageMin < 1 ? 'à l\'instant' : 'il y a ' + (ageMin < 60 ? ageMin + ' min' : Math.round(ageMin / 60) + ' h')} · ${Object.keys(d.models).filter(id => id !== 'avg').length} modèles · Open-Meteo`;
   if (M.model !== 'compare' && !d.models[M.model]) M.model = Object.keys(d.models)[0];
   renderModelBar();
   const days = [...new Set(d.time.map(t => t.slice(0, 10)))].slice(0, 7);
   if (M.day >= days.length) M.day = 0;
   // créneaux
-  const sl = slots(d, M.model === 'compare' ? Object.keys(d.models)[0] : M.model);
+  const sl = slots(d, M.model === 'compare' ? 'avg' : M.model);
   const slHtml = sl.length ? sl.slice(0, 5).map(s => `<div class="slot" data-day="${days.indexOf(s.day)}"><b>${dayLabel(s.day)}</b> ${hh(s.from)}–${+s.to.slice(11, 13) + 1}h <span class="grow"></span><span class="pill" style="background:${windColor(s.wmax * KN)};color:${windTxt(s.wmax * KN)}">${Math.round(wv(s.wmin * KN))}–${Math.round(wv(s.wmax * KN))} ${wUnit()}</span> ${arrow(s.dir)} ${dirName(s.dir)}</div>`).join('')
     : `<div class="cap" style="margin:0">Aucun créneau entre ${Math.round(wv(cfg.wmin * KN))} et ${Math.round(wv(cfg.wmax * KN))} ${wUnit()} en journée sur 7 jours.</div>`;
   const tex = d.hasTide ? tideExtrema(d.marine.ttime, d.marine.tide) : [];
@@ -180,11 +210,11 @@ function drawMeteo() {
     <h2>Vent sur 7 jours</h2>
     <canvas id="mxChart" class="cv" style="height:210px"></canvas>
     <p class="cap tip" id="mxChartInfo"></p>
-    <div class="mlegend">${(M.model === 'compare' ? Object.keys(d.models) : [M.model]).map(id => `<span><i style="background:${MCOL[id]}"></i>${MODELS.find(m => m.id === id).name}</span>`).join('')}${M.model !== 'compare' ? '<span><i style="background:rgba(255,255,255,.25)"></i>Rafales</span>' : ''}</div>
+    <div class="mlegend">${(M.model === 'compare' ? modelIds(d) : [M.model]).map(id => `<span><i style="background:${MCOL[id]}"></i>${mName(id)}</span>`).join('')}${M.model !== 'compare' ? '<span><i style="background:rgba(255,255,255,.25)"></i>Rafales</span>' : ''}</div>
     ${d.hasTide ? `<h2>Marée</h2><canvas id="mxTide" class="cv" style="height:150px"></canvas><p class="cap tip" id="mxTideInfo"></p><p class="cap">Hauteur d'eau calculée par modèle (indicative) : vérifie l'annuaire officiel (SHOM) pour les spots à fort marnage.</p>` : ''}
     ${d.hasWaves ? `<h2>Vagues sur 7 jours</h2><canvas id="mxWave" class="cv" style="height:150px"></canvas><p class="cap tip" id="mxWaveInfo"></p>` : ''}
     <h2>Modèles</h2>
-    <div class="note">${MODELS.map(m => `<b style="color:${MCOL[m.id]}">${m.name}</b> ${m.desc}${d.models[m.id] ? '' : ' · <i>indisponible ici</i>'}`).join('<br>')}<br><br>Compare les modèles : quand ils sont d'accord, la prévision est fiable. AROME est le plus précis sur les côtes françaises à 2 jours.</div>`;
+    <div class="note">${MODELS.map(m => `<b style="color:${MCOL[m.id]}">${m.name}</b> ${m.desc}${d.models[m.id] ? '' : ' · <i>indisponible ici</i>'}`).join('<br>')}<br><br>La ligne « Écart » donne la différence entre le modèle le plus faible et le plus fort : petit écart = prévision fiable. AROME est le plus précis sur les côtes françaises à 2 jours.</div>`;
   document.querySelectorAll('.days button').forEach(b => b.onclick = () => { M.day = +b.dataset.k; drawMeteo(); });
   document.querySelectorAll('.slot').forEach(b => b.onclick = () => { if (+b.dataset.day >= 0) { M.day = +b.dataset.day; drawMeteo(); } });
   $('wrMin').onclick = () => setRange('wmin'); $('wrMax').onclick = () => setRange('wmax');
@@ -213,17 +243,18 @@ function tableHtml(d, day) {
   const row = (label, cell, extraCls = '') => `<tr class="${extraCls}"><th>${label}</th>${cols.map(t => cell(t)).join('')}</tr>`;
   const mk = M.model === 'compare' ? null : d.models[M.model];
   let rows = row('', t => `<td class="hd${cls(t)}">${hh(t)}</td>`, 'hrow');
-  const ref = mk || d.models[Object.keys(d.models)[0]];
+  const ref = mk || d.models.avg || d.models[Object.keys(d.models)[0]];
   rows += row('', t => { const c = at(ref.code, ref.time, t), tp = at(ref.temp, ref.time, t); return `<td class="${cls(t)}">${wxIcon(c, night(t))}<small>${tp == null ? '' : Math.round(tp) + '°'}</small></td>`; });
   const windCell = (m, t) => { const w = at(m.ws, m.time, t); return `<td class="w${cls(t)}" style="background:${windColor(w)};color:${windTxt(w)}">${wf(w)}</td>`; };
   if (mk) {
     rows += row(`Vent<small>${wUnit()}</small>`, t => windCell(mk, t));
     rows += row('Rafales', t => windCell({ ws: mk.wg, time: mk.time }, t));
     rows += row('Dir.', t => { const dd = at(mk.wd, mk.time, t); return `<td class="${cls(t)}">${arrow(dd)}<small>${dirName(dd)}</small></td>`; });
+    if (M.model === 'avg') rows += row(`Écart<small>${wUnit()}</small>`, t => { const v = at(mk.spread, mk.time, t); const k = v == null ? null : kn(v); return `<td class="${cls(t)}" style="color:${k == null ? '' : k < 4 ? '#7ccf3c' : k < 8 ? '#e6d23a' : '#ec4b4b'}">${v == null ? '–' : '±' + Math.round(wv(v) / 2)}</td>`; });
   } else {
-    Object.keys(d.models).forEach(id => {
+    modelIds(d).forEach(id => {
       const m = d.models[id];
-      rows += row(`<span style="color:${MCOL[id]}">${MODELS.find(x => x.id === id).name}</span>`, t => {
+      rows += row(`<span style="color:${MCOL[id]}">${mName(id)}</span>`, t => {
         const w = at(m.ws, m.time, t), g = at(m.wg, m.time, t), dd = at(m.wd, m.time, t);
         return `<td class="w cmp${cls(t)}" style="background:${windColor(w)};color:${windTxt(w)}">${wf(w)}<small>${g == null ? '' : wf(g)}</small>${dd == null ? '' : `<span class="arr mini" style="transform:rotate(${dd + 180}deg)">↑</span>`}</td>`;
       });
@@ -250,7 +281,7 @@ function tableHtml(d, day) {
 function drawWindChart(cur) {
   const d = M.data; if (!d || !$('mxChart')) return;
   const { c, W, H } = prep('mxChart');
-  const T = d.time, n = T.length, ids = M.model === 'compare' ? Object.keys(d.models) : [M.model];
+  const T = d.time, n = T.length, ids = M.model === 'compare' ? modelIds(d) : [M.model];
   const pad = { l: 26, r: 8, t: 12, b: 20 }, w = W - pad.l - pad.r, h = H - pad.t - pad.b;
   let vmax = 10;
   ids.forEach(id => { const m = d.models[id]; m.ws.concat(M.model === 'compare' ? [] : m.wg).forEach(v => { if (v != null) vmax = Math.max(vmax, wv(v)); }); });
@@ -288,7 +319,7 @@ function drawWindChart(cur) {
       pts.slice().reverse().forEach(([i, a]) => c.lineTo(X(i), Y(a)));
       c.closePath(); c.fillStyle = 'rgba(255,255,255,.13)'; c.fill(); void started;
     }
-    line({ s: m.ws, t: m.time }, MCOL[id], M.model === 'compare' ? 1.6 : 2.2);
+    line({ s: m.ws, t: m.time }, MCOL[id], M.model === 'compare' ? (id === 'avg' ? 3 : 1.4) : 2.2);
   });
   // maintenant
   const nowL = new Date(Date.now() + d.offset * 1000).toISOString().slice(0, 13) + ':00', ni = T.indexOf(nowL);
@@ -301,7 +332,7 @@ function drawWindChart(cur) {
       const m = d.models[id], a = at(m.ws, m.time, t), g = at(m.wg, m.time, t), dd = at(m.wd, m.time, t);
       if (a == null) return;
       c.fillStyle = MCOL[id]; c.beginPath(); c.arc(x, Y(a), 3.5, 0, 7); c.fill();
-      lines.push(`${MODELS.find(x => x.id === id).name} ${wf(a)}${g != null ? ' (raf. ' + wf(g) + ')' : ''} ${wUnit()} ${dirName(dd)}`);
+      lines.push(`${mName(id)} ${wf(a)}${g != null ? ' (raf. ' + wf(g) + ')' : ''} ${wUnit()} ${dirName(dd)}`);
     });
     bubble(c, x, pad.t + 30, lines, W, H);
     $('mxChartInfo').textContent = lines.join(' · ');
@@ -384,36 +415,107 @@ function bindCharts() {
 }
 bindCharts();
 
-/* ---------- choix du spot ---------- */
+/* ---------- mes spots ---------- */
 const favs = () => cfg.favSpots || [];
 const sameSpot = (a, b) => a && b && Math.abs(a.lat - b.lat) < 0.005 && Math.abs(a.lon - b.lon) < 0.005;
 const isFav = s => favs().some(f => sameSpot(f, s));
+const saveSpots = list => { cfg.favSpots = list; saveCfg(); M.quick = null; };
 function toggleFav() {
-  const f = favs();
-  cfg.favSpots = isFav(M.spot) ? f.filter(x => !sameSpot(x, M.spot)) : f.concat([{ name: M.spot.name, lat: M.spot.lat, lon: M.spot.lon }]);
-  saveCfg(); renderMeteo();
+  if (isFav(M.spot)) saveSpots(favs().filter(x => !sameSpot(x, M.spot)));
+  else saveSpots(favs().concat([{ name: M.spot.name, lat: M.spot.lat, lon: M.spot.lon }]));
+  renderMeteo();
 }
 function setSpot(s) {
   M.spot = { name: s.name, lat: +s.lat, lon: +s.lon }; M.day = 0;
   cfg.meteoSpot = M.spot; saveCfg(); renderMeteo();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
+async function createSpot(lat, lon, suggested) {
+  if (lat == null) { // pas de point choisi : on demande où
+    const ok = await ask('Où se trouve le nouveau spot ?', { ok: '📍 Ma position', no: '🗺️ Sur la carte' });
+    if (ok) return hereThen((la, lo) => createSpot(la, lo));
+    M.pickMode = true; toast('Touche la carte à l\'endroit du spot');
+    $('mxMap').scrollIntoView({ behavior: 'smooth', block: 'center' }); return;
+  }
+  const name0 = suggested || (await reverseGeocode(lat, lon)) || '';
+  const ok = await ask('Nom du nouveau spot', { ok: 'Créer', extra: `<input type="text" id="nsName" value="${esc(name0)}" placeholder="ex. Plage du Prévost" style="margin-bottom:14px">` });
+  if (!ok) return;
+  const name = $('nsName').value.trim() || name0 || 'Mon spot';
+  saveSpots(favs().filter(f => !sameSpot(f, { lat, lon })).concat([{ name, lat, lon }]));
+  toast('Spot créé'); setSpot({ name, lat, lon });
+}
+async function editSpot(k) {
+  const f = favs()[k]; if (!f) return;
+  let del = false;
+  const p = ask(`Spot « ${f.name} »`, { ok: 'Renommer', extra: `<input type="text" id="esName" value="${esc(f.name)}" style="margin-bottom:10px"><button class="btn red" id="esDel" style="width:100%;margin-bottom:14px">Supprimer ce spot</button>` });
+  $('esDel').onclick = () => { del = true; $('mNo').click(); };
+  const ok = await p;
+  const list = favs().slice();
+  if (del) { list.splice(k, 1); saveSpots(list); toast('Spot supprimé'); }
+  else if (ok) { list[k] = { ...f, name: $('esName').value.trim() || f.name }; saveSpots(list); if (sameSpot(M.spot, f)) { M.spot.name = list[k].name; cfg.meteoSpot = M.spot; saveCfg(); } }
+  renderMeteo();
+}
+function hereThen(fn) {
+  if (!navigator.geolocation) return toast('Localisation indisponible');
+  toast('Localisation…');
+  navigator.geolocation.getCurrentPosition(p => fn(p.coords.latitude, p.coords.longitude), () => toast('Localisation refusée'), { enableHighAccuracy: false, timeout: 15000 });
+}
+// aperçu rapide de tous les spots (une seule requête multi-points, meilleur modèle dispo)
+async function quickFetch(list) {
+  if (!list.length) return [];
+  const key = list.map(s => s.lat.toFixed(3) + ',' + s.lon.toFixed(3)).join('|');
+  if (M.quick && M.quick.key === key && Date.now() - M.quick.at < 30 * 60e3) return M.quick.res;
+  const url = `${OM}?latitude=${list.map(s => s.lat.toFixed(4)).join(',')}&longitude=${list.map(s => s.lon.toFixed(4)).join(',')}&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m&daily=sunrise,sunset&timezone=auto&forecast_days=3`;
+  let j = await getJSON(url); if (!Array.isArray(j)) j = [j];
+  M.quick = { key, at: Date.now(), res: j };
+  try { localStorage.setItem('wt_quick', JSON.stringify(M.quick)); } catch (e) {}
+  return j;
+}
+function quickSummary(j) {
+  const h = j.hourly, off = j.utc_offset_seconds || 0;
+  const nowL = new Date(Date.now() + off * 1000).toISOString().slice(0, 13) + ':00';
+  const i = Math.max(0, h.time.indexOf(nowL));
+  const sun = {}; if (j.daily) j.daily.time.forEach((d, k) => sun[d] = [tms(j.daily.sunrise[k]), tms(j.daily.sunset[k])]);
+  let next = null;
+  for (let k = i; k < h.time.length - 1; k++) {
+    const t = h.time[k], s = sun[t.slice(0, 10)], ms = tms(t);
+    const day = s ? ms >= s[0] && ms + 3600e3 <= s[1] + 1800e3 : true;
+    const ok = w => w != null && kn(w) >= cfg.wmin && kn(w) <= cfg.wmax;
+    if (day && ok(h.wind_speed_10m[k]) && ok(h.wind_speed_10m[k + 1])) { next = t; break; }
+  }
+  return { w: h.wind_speed_10m[i], g: h.wind_gusts_10m[i], d: h.wind_direction_10m[i], next };
+}
+async function renderSpotList() {
+  const list = favs();
+  if (!list.length) { $('mxSpotList').innerHTML = '<div class="empty" style="padding:16px">Crée tes spots pour les consulter d\'un coup d\'œil : bouton « + Créer un spot », l\'étoile ☆ d\'un spot, ou touche la carte.</div>'; return; }
+  const card = (s, k, q) => {
+    const sm = q ? quickSummary(q) : null;
+    const nowTxt = sm && sm.w != null ? `<span class="pill" style="background:${windColor(sm.w)};color:${windTxt(sm.w)}">${wf(sm.w)}</span><small> raf. ${wf(sm.g)} ${wUnit()}</small> ${arrow(sm.d)}<small>${dirName(sm.d)}</small>` : '<small>…</small>';
+    const nx = sm ? (sm.next ? `✅ ${sm.next === quickNowKey(q) ? 'Navigable maintenant' : 'Navigable ' + dayLabel(sm.next.slice(0, 10)) + ' ' + hh(sm.next)}` : '— pas de créneau sur 3 j') : '';
+    return `<div class="scard ${M.spot && sameSpot(s, M.spot) ? 'on' : ''}" data-k="${k}"><div class="row"><b class="grow">${esc(s.name)}</b><button class="dots" data-e="${k}">⋯</button></div><div class="snow">${nowTxt}</div><div class="snext">${nx}</div></div>`;
+  };
+  let cached = null;
+  try { const c = JSON.parse(localStorage.getItem('wt_quick') || 'null'); if (c && c.res && c.res.length === list.length) cached = c.res; } catch (e) {}
+  const paint = res => {
+    $('mxSpotList').innerHTML = list.map((s, k) => card(s, k, res && res[k])).join('');
+    document.querySelectorAll('#mxSpotList .scard').forEach(el => el.onclick = e => { if (e.target.dataset.e != null) return; setSpot(list[+el.dataset.k]); });
+    document.querySelectorAll('#mxSpotList [data-e]').forEach(b => b.onclick = e => { e.stopPropagation(); editSpot(+b.dataset.e); });
+  };
+  paint(cached);
+  try { paint(await quickFetch(list)); } catch (e) {}
+}
+const quickNowKey = j => new Date(Date.now() + (j.utc_offset_seconds || 0) * 1000).toISOString().slice(0, 13) + ':00';
 async function renderSpotChips() {
+  renderSpotList();
   let mine = [];
   try { mine = groupSpots(await DB.all()).sort((a, b) => b.last - a.last).map(sp => ({ name: sp.name, lat: sp.c[0], lon: sp.c[1] })); } catch (e) {}
-  const list = [];
-  favs().forEach(f => list.push({ ...f, fav: true }));
-  mine.forEach(s => { if (!list.some(x => sameSpot(x, s))) list.push(s); });
-  $('mxChips').innerHTML = list.map((s, k) => `<button class="chip2 ${M.spot && sameSpot(s, M.spot) ? 'on' : ''}" data-k="${k}">${s.fav ? '★ ' : ''}${esc(s.name)}</button>`).join('')
-    + `<button class="chip2" id="mxHere">📍 Ma position</button><button class="chip2" id="mxFind">🔍 Chercher</button>`;
+  M.sessionSpots = mine;
+  const list = mine.filter(s => !isFav(s));
+  $('mxChips').innerHTML = `<button class="chip2 add" id="mxNew">＋ Créer un spot</button><button class="chip2" id="mxHere">📍 Ma position</button><button class="chip2" id="mxFind">🔍 Chercher</button>`
+    + list.map((s, k) => `<button class="chip2 ${M.spot && sameSpot(s, M.spot) ? 'on' : ''}" data-k="${k}">🏄 ${esc(s.name)}</button>`).join('');
   document.querySelectorAll('#mxChips [data-k]').forEach(b => b.onclick = () => setSpot(list[+b.dataset.k]));
-  $('mxHere').onclick = () => {
-    if (!navigator.geolocation) return toast('Localisation indisponible');
-    toast('Localisation…');
-    navigator.geolocation.getCurrentPosition(async p => {
-      const name = (await reverseGeocode(p.coords.latitude, p.coords.longitude)) || 'Ma position';
-      setSpot({ name, lat: p.coords.latitude, lon: p.coords.longitude });
-    }, () => toast('Localisation refusée'), { enableHighAccuracy: false, timeout: 15000 });
-  };
+  $('mxNew').onclick = () => createSpot();
+  $('mxHere').onclick = () => hereThen(async (la, lo) => setSpot({ name: (await reverseGeocode(la, lo)) || 'Ma position', lat: la, lon: lo }));
   $('mxFind').onclick = () => { $('mxSearch').style.display = $('mxSearch').style.display === 'none' ? '' : 'none'; $('mxQ').focus(); };
 }
 let searchT = null;
@@ -435,21 +537,121 @@ function renderModelBar() {
   $('mxModels').innerHTML = MODELS.filter(m => avail.includes(m.id)).map(m => `<button class="${M.model === m.id ? 'on' : ''}" data-m="${m.id}">${m.name}</button>`).join('') + `<button class="${M.model === 'compare' ? 'on' : ''}" data-m="compare">Comparer</button>`;
   document.querySelectorAll('#mxModels button').forEach(b => b.onclick = () => { M.model = b.dataset.m; cfg.meteoModel = M.model; saveCfg(); drawMeteo(); });
 }
+/* ---------- carte : spots, point touché, flèches façon Windy ---------- */
+const FIELD = { off: 'Off', wind: 'Vent', gust: 'Rafales', wave: 'Vagues', swell: 'Houle' };
+M.field = cfg.meteoField || 'wind';
+function waveColor(m) { return m == null ? 'transparent' : m < 0.5 ? '#1d3b52' : m < 1 ? '#2f6f8f' : m < 1.5 ? '#2bb39a' : m < 2 ? '#7ccf3c' : m < 2.5 ? '#e6d23a' : m < 3.5 ? '#f39c34' : '#ec4b4b'; }
 function showSpotMap() {
   if (!window.L) return;
   if (!M.map) {
     M.map = makeMap('mxMap'); if (!M.map) return;
-    M.map.on('click', async e => {
-      const { lat, lng } = e.latlng;
-      const name = (await reverseGeocode(lat, lng)) || `Point ${lat.toFixed(2)}, ${lng.toFixed(2)}`;
-      setSpot({ name, lat, lon: lng });
-    });
+    M.spotLayer = L.layerGroup().addTo(M.map);
+    M.fieldLayer = L.layerGroup().addTo(M.map);
+    M.map.on('click', e => onMapTap(e.latlng.lat, e.latlng.lng));
+    M.map.on('moveend', () => { clearTimeout(M.gridT); M.gridT = setTimeout(loadField, 500); });
+    renderFieldBar();
   }
   setTimeout(() => M.map.invalidateSize(), 60);
-  if (M.spot) {
-    if (!M.mk) M.mk = L.circleMarker([M.spot.lat, M.spot.lon], { radius: 9, color: '#fff', weight: 3, fillColor: '#22d3c5', fillOpacity: 1 }).addTo(M.map);
-    M.mk.setLatLng([M.spot.lat, M.spot.lon]);
-    M.map.setView([M.spot.lat, M.spot.lon], Math.max(M.map.getZoom(), 10));
-  }
+  drawSpotMarkers();
+  if (M.spot && !M.centered) { M.map.setView([M.spot.lat, M.spot.lon], 10); M.centered = true; }
+  else loadField();
 }
+function drawSpotMarkers() {
+  if (!M.spotLayer) return;
+  M.spotLayer.clearLayers();
+  const add = (s, cls, label) => {
+    const icon = L.divIcon({ className: '', html: `<div class="smk ${cls}">${label}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] });
+    L.marker([s.lat, s.lon], { icon, zIndexOffset: cls === 'cur' ? 1000 : 500 }).addTo(M.spotLayer)
+      .bindTooltip(esc(s.name), { permanent: cls !== 'ses', direction: 'right', offset: [12, 0], className: 'stip' })
+      .on('click', ev => { L.DomEvent.stopPropagation(ev); onMapTap(s.lat, s.lon, s.name); });
+  };
+  (M.sessionSpots || []).filter(s => !isFav(s)).forEach(s => add(s, 'ses', '🏄'));
+  favs().forEach(s => add(s, M.spot && sameSpot(s, M.spot) ? 'cur' : 'fav', '★'));
+  if (M.spot && !isFav(M.spot)) add(M.spot, 'cur', '●');
+}
+async function onMapTap(lat, lon, knownName) {
+  if (M.pickMode) { M.pickMode = false; return createSpot(lat, lon); }
+  const pop = L.popup({ maxWidth: 260 }).setLatLng([lat, lon]).setContent('<div class="pop">Chargement…</div>').openOn(M.map);
+  let html = '';
+  try {
+    const ll = `latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&timezone=auto&forecast_days=7`;
+    const [f, m, name] = await Promise.all([
+      getJSON(`${OM}?${ll}&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m,temperature_2m`),
+      getJSON(`${MAR}?${ll}&hourly=wave_height,wave_period,wave_direction,swell_wave_height,swell_wave_period,swell_wave_direction`).catch(() => null),
+      knownName ? Promise.resolve(knownName) : reverseGeocode(lat, lon),
+    ]);
+    const t = fieldTime() || new Date(Date.now() + (f.utc_offset_seconds || 0) * 1000).toISOString().slice(0, 13) + ':00';
+    const i = Math.max(0, f.hourly.time.indexOf(t)), h = f.hourly;
+    const w = h.wind_speed_10m[i], g = h.wind_gusts_10m[i], d = h.wind_direction_10m[i];
+    html = `<b>${esc(name || `Point ${lat.toFixed(2)}, ${lon.toFixed(2)}`)}</b><br><small>${dayLabel(t.slice(0, 10))} · ${hh(t)}</small><br>`
+      + `Vent <span class="pill" style="background:${windColor(w)};color:${windTxt(w)}">${wf(w)}</span> raf. ${wf(g)} ${wUnit()} ${arrow(d, '#06141f')} ${dirName(d)}`;
+    if (m && m.hourly) {
+      const mh = m.hourly, k = mh.time.indexOf(t);
+      if (k >= 0 && mh.wave_height[k] != null) html += `<br>Vagues ${mh.wave_height[k].toFixed(1)} m · ${Math.round(mh.wave_period[k])} s ${dirName(mh.wave_direction[k])}<br>Houle ${mh.swell_wave_height[k] == null ? '–' : mh.swell_wave_height[k].toFixed(1) + ' m · ' + Math.round(mh.swell_wave_period[k]) + ' s ' + dirName(mh.swell_wave_direction[k])}`;
+    }
+    M.tapName = name;
+  } catch (e) { html = `<b>Point ${lat.toFixed(2)}, ${lon.toFixed(2)}</b><br><small>Prévisions indisponibles hors ligne</small>`; }
+  html += `<br><button class="btn small pri" id="tpGo">Prévisions ici</button> ${isFav({ lat, lon }) ? '' : '<button class="btn small" id="tpNew">＋ Spot</button>'}`;
+  pop.setContent(`<div class="pop">${html}</div>`);
+  const go = document.getElementById('tpGo'), nw = document.getElementById('tpNew');
+  if (go) go.onclick = () => { M.map.closePopup(); setSpot({ name: knownName || M.tapName || `Point ${lat.toFixed(2)}, ${lon.toFixed(2)}`, lat, lon }); };
+  if (nw) nw.onclick = () => { M.map.closePopup(); createSpot(lat, lon, knownName || M.tapName); };
+}
+function renderFieldBar() {
+  $('mxLayer').innerHTML = Object.entries(FIELD).map(([k, v]) => `<button class="${M.field === k ? 'on' : ''}" data-f="${k}">${v}</button>`).join('');
+  document.querySelectorAll('#mxLayer button').forEach(b => b.onclick = () => { M.field = b.dataset.f; cfg.meteoField = M.field; saveCfg(); renderFieldBar(); loadField(); });
+  $('mxTimeBox').style.display = M.field === 'off' ? 'none' : '';
+}
+const fieldTime = () => M.grid && M.grid.time ? M.grid.time[+$('mxTime').value] : null;
+async function loadField() {
+  if (!M.map || M.field === 'off') { if (M.fieldLayer) M.fieldLayer.clearLayers(); return; }
+  const b = M.map.getBounds(), sz = M.map.getSize();
+  const cols = Math.max(4, Math.round(sz.x / 62)), rows = Math.max(4, Math.round(sz.y / 62));
+  const S = b.getSouth(), N = b.getNorth(), Wst = b.getWest(), E = b.getEast();
+  const lats = [], lons = [];
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { lats.push(S + (r + 0.5) * (N - S) / rows); lons.push(Wst + (c + 0.5) * (E - Wst) / cols); }
+  const marine = M.field === 'wave' || M.field === 'swell';
+  const key = [marine, lats[0].toFixed(3), lons[0].toFixed(3), lats[lats.length - 1].toFixed(3), lons[lons.length - 1].toFixed(3), lats.length].join('|');
+  if (M.grid && M.grid.key === key) return drawField();
+  $('mxTimeLbl').textContent = 'Chargement…';
+  const ll = `latitude=${lats.map(x => x.toFixed(3)).join(',')}&longitude=${lons.map(x => x.toFixed(3)).join(',')}&forecast_days=7&timezone=auto`;
+  const model = M.model !== 'avg' && M.model !== 'compare' ? `&models=${M.model}` : '';
+  try {
+    let j = marine ? await getJSON(`${MAR}?${ll}&hourly=wave_height,wave_direction,wave_period,swell_wave_height,swell_wave_direction,swell_wave_period`)
+      : await getJSON(`${OM}?${ll}&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m${model}`);
+    if (!Array.isArray(j)) j = [j];
+    const first = j.find(x => x && x.hourly);
+    const prevT = fieldTime();
+    M.grid = { key, marine, pts: j.map((x, k) => ({ lat: lats[k], lon: lons[k], h: x && x.hourly })), time: first.hourly.time, off: first.utc_offset_seconds || 0 };
+    const sl = $('mxTime'); sl.max = M.grid.time.length - 1;
+    const nowL = new Date(Date.now() + M.grid.off * 1000).toISOString().slice(0, 13) + ':00';
+    const keep = prevT ? M.grid.time.indexOf(prevT) : -1;
+    sl.value = keep >= 0 ? keep : Math.max(0, M.grid.time.indexOf(nowL));
+    drawField();
+  } catch (e) { $('mxTimeLbl').textContent = 'Flèches indisponibles (hors ligne ?)'; }
+}
+function drawField() {
+  if (!M.grid || !M.fieldLayer) return;
+  M.fieldLayer.clearLayers();
+  const i = +$('mxTime').value, t = M.grid.time[i];
+  $('mxTimeLbl').textContent = `${dayLabel(t.slice(0, 10))} · ${hh(t)} · ${FIELD[M.field]}${M.grid.marine ? '' : ' (' + (M.model !== 'avg' && M.model !== 'compare' ? mName(M.model) : 'meilleur modèle') + ')'}`;
+  M.grid.pts.forEach(p => {
+    if (!p.h) return;
+    let v, d, col, txt, sub = '';
+    if (M.field === 'wind' || M.field === 'gust') {
+      v = M.field === 'wind' ? p.h.wind_speed_10m[i] : p.h.wind_gusts_10m[i]; d = p.h.wind_direction_10m[i];
+      if (v == null) return; col = windColor(v); txt = wf(v);
+    } else if (M.field === 'wave') {
+      v = p.h.wave_height[i]; d = p.h.wave_direction[i]; if (v == null) return;
+      col = waveColor(v); txt = v.toFixed(1); sub = p.h.wave_period[i] == null ? '' : Math.round(p.h.wave_period[i]) + 's';
+    } else {
+      v = p.h.swell_wave_height[i]; d = p.h.swell_wave_direction[i]; if (v == null) return;
+      col = waveColor(v); txt = v.toFixed(1); sub = p.h.swell_wave_period[i] == null ? '' : Math.round(p.h.swell_wave_period[i]) + 's';
+    }
+    const tc = (M.field === 'wind' || M.field === 'gust') ? windTxt(v) : (v >= 1.5 && v < 3.5 ? '#06141f' : '#fff');
+    const icon = L.divIcon({ className: '', html: `<div class="fa" style="--c:${col};--t:${tc}">${d == null ? '<b>•</b>' : `<svg viewBox="0 0 24 24" style="transform:rotate(${d + 180}deg)"><path d="M12 2l7 10h-4.5v10h-5V12H5z"/></svg>`}<i>${txt}${sub ? '<small>' + sub + '</small>' : ''}</i></div>`, iconSize: [40, 44], iconAnchor: [20, 22] });
+    L.marker([p.lat, p.lon], { icon, interactive: false, zIndexOffset: -100 }).addTo(M.fieldLayer);
+  });
+}
+$('mxTime').oninput = drawField;
 $('mxRefresh').onclick = () => renderMeteo(true);
