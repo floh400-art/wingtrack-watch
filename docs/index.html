@@ -40,7 +40,7 @@ button{font:inherit;color:inherit;border:0;cursor:pointer}
 .item .s{text-align:right;font-weight:700;color:var(--acc);font-size:18px}
 .item .s small{display:block;color:var(--mut);font-weight:500;font-size:11px}
 .empty{color:var(--mut);text-align:center;padding:30px 10px;border:1px dashed var(--line);border-radius:14px}
-#map,#dmap,#hmap{height:260px;border-radius:16px;overflow:hidden;border:1px solid var(--line);background:#0a1b27}
+#map,#dmap,#hmap,#mxMap{height:260px;border-radius:16px;overflow:hidden;border:1px solid var(--line);background:#0a1b27}
 #live{padding:0}
 #live .top{padding:12px 16px 0}
 .speed{text-align:center;padding:4px 0 8px}
@@ -95,6 +95,37 @@ canvas.cv{width:100%;display:block;background:var(--card);border:1px solid var(-
 .pop{font-size:13px;line-height:1.5}.pop .btn{margin-top:6px;padding:6px 10px;font-size:12px}
 .chip{background:var(--card);border:1px solid var(--acc);color:var(--acc);border-radius:20px;padding:8px 14px;font-weight:600;margin-bottom:10px}
 .spotline{color:var(--acc);font-size:14px;font-weight:600;margin:0 0 14px;cursor:pointer}
+.chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:10px;scrollbar-width:none}
+.chip2{white-space:nowrap;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:8px 12px;font-size:13px;font-weight:600;color:var(--txt)}
+.chip2.on{border-color:var(--acc);color:var(--acc)}
+.spotname{font-size:22px;margin:6px 0 12px;display:flex;align-items:center;gap:8px}
+.star{background:none;font-size:22px;color:var(--mut);padding:0}.star.on{color:#ffd166}
+.seg.scroll{overflow-x:auto}.seg.scroll button{white-space:nowrap;padding:9px 12px}
+.slots{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.slot{display:flex;align-items:center;gap:6px;padding:10px 12px;border-bottom:1px solid var(--line);font-size:14px}
+.slot:last-child{border-bottom:0}.slot .grow{flex:1}
+.pill{padding:3px 8px;border-radius:10px;font-weight:700;font-size:13px}
+.wr{color:var(--acc);text-decoration:underline;cursor:pointer}
+.days{display:flex;gap:6px;overflow-x:auto;margin:16px 0 10px;scrollbar-width:none}
+.days button{position:relative;white-space:nowrap;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 12px;font-weight:700;font-size:13px;color:var(--mut);text-transform:capitalize}
+.days button.on{background:var(--acc);color:#04211e;border-color:var(--acc)}
+.days button i{position:absolute;top:4px;right:4px;width:6px;height:6px;border-radius:50%;background:#7ccf3c}
+.tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:var(--card)}
+table.fc{border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+table.fc th{position:sticky;left:0;z-index:1;background:#0b1d2a;color:var(--mut);font-weight:600;font-size:11px;text-align:left;padding:6px 8px;white-space:nowrap;min-width:62px;border-right:1px solid var(--line)}
+table.fc th small,table.fc td small{display:block;font-size:10px;opacity:.8;font-weight:500}
+table.fc td{text-align:center;padding:6px 2px;min-width:40px;border-left:1px solid rgba(24,58,80,.5)}
+table.fc td.w{font-weight:800;font-size:14px}
+table.fc td.cmp{font-size:13px;line-height:1.1}
+table.fc td.night:not(.w){background:rgba(0,0,0,.25)}
+table.fc td.hd{color:var(--mut);font-weight:700;font-size:12px}
+table.fc td.now{box-shadow:inset 0 0 0 2px #fff}
+table.fc tr.sep td,table.fc tr.sep th{border-top:2px solid var(--line)}
+.arr{display:inline-block;font-weight:900;font-size:15px;line-height:1}
+.arr.mini{font-size:10px;display:block;margin:1px auto 0;width:10px}
+.tides{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:13px;margin-top:10px;color:var(--mut)}
+.tides b{color:#60a5fa}
+#mxQ{margin-bottom:0}
 </style>
 </head>
 <body>
@@ -178,6 +209,20 @@ canvas.cv{width:100%;display:block;background:var(--card);border:1px solid var(-
   </div>
 </section>
 
+<!-- MÉTÉO -->
+<section id="meteo" class="view">
+  <div class="row"><h1 class="grow">Météo</h1><button class="btn small" id="mxRefresh">↻</button></div>
+  <p class="sub" id="mxStatus"></p>
+  <div class="chips" id="mxChips"></div>
+  <div id="mxSearch" style="display:none"><input type="text" id="mxQ" placeholder="Ville, plage, spot…" autocomplete="off"><div id="mxRes" class="evlist" style="margin-top:8px"></div></div>
+  <h1 class="spotname" id="mxSpot"></h1>
+  <div class="seg scroll" id="mxModels"></div>
+  <div id="mxBody"></div>
+  <h2>Carte</h2>
+  <div id="mxMap"></div>
+  <p class="cap">Touche la carte pour voir les prévisions d'un autre endroit</p>
+</section>
+
 <!-- IMPORT -->
 <section id="import" class="view">
   <h1>Importer</h1>
@@ -220,6 +265,7 @@ canvas.cv{width:100%;display:block;background:var(--card);border:1px solid var(-
 
 <nav class="nav" id="nav">
   <button data-v="home" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/></svg>Sessions</button>
+  <button data-v="meteo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8h11a3 3 0 10-3-3M3 12h15a3 3 0 11-3 3M3 16h8"/></svg>Météo</button>
   <button data-v="import"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v3h16v-3"/></svg>Importer</button>
   <button data-v="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>Réglages</button>
 </nav>
@@ -230,5 +276,6 @@ canvas.cv{width:100%;display:block;background:var(--card);border:1px solid var(-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="stats.js"></script>
 <script src="app.js"></script>
+<script src="meteo.js"></script>
 </body>
 </html>

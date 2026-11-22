@@ -68,6 +68,7 @@ function show(v) {
   $('nav').style.display = v === 'live' ? 'none' : '';
   window.scrollTo(0, 0);
   if (v === 'home') renderHome();
+  if (v === 'meteo' && typeof renderMeteo === 'function') renderMeteo();
 }
 document.querySelectorAll('#nav button').forEach(b => b.onclick = () => show(b.dataset.v));
 
