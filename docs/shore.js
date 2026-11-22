@@ -143,12 +143,9 @@ async function ensureShoreArea(map, spots) {
   SH_AREAS.add(key);
   const S = Math.min(...todo.map(s => s.lat)) - 0.04, N = Math.max(...todo.map(s => s.lat)) + 0.04, W = Math.min(...todo.map(s => s.lon)) - 0.06, E = Math.max(...todo.map(s => s.lon)) + 0.06;
   try {
-    const j = await overpass(`[out:json][timeout:40];(way["natural"="coastline"](${S},${W},${N},${E});way["natural"="water"](${S},${W},${N},${E}););out geom;`);
-    const idx = buildCoastIndex(j.elements || []);
-    for (let i = 0; i < todo.length; i++) {
-      SHORE[shKey(todo[i])] = Math.round(shoreFromIndex(todo[i], idx));
-      if (i % 10 === 9) await shTick(); // laisse respirer l'écran
-    }
+    // téléchargement + calcul dans le processus en arrière-plan : l'écran ne gèle pas
+    const res = await osmJob({ type: 'shore', q: `[out:json][timeout:40];(way["natural"="coastline"](${S},${W},${N},${E});way["natural"="water"](${S},${W},${N},${E}););out geom;`, spots: todo.map(s => ({ lat: s.lat, lon: s.lon })) });
+    todo.forEach((s, i) => { SHORE[shKey(s)] = res[i]; });
     saveShore(); return true;
   } catch (e) {
     // OpenStreetMap indisponible : méthode des vagues pour quelques spots (requêtes limitées)

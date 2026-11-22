@@ -17,7 +17,7 @@ function openCarte() {
     if (lp) { lp.style.zIndex = 450; lp.style.pointerEvents = 'none'; }
     cmBase();
     CM.layer = L.layerGroup().addTo(CM.map);
-    CM.map.on('moveend', () => { clearTimeout(CM.t); CM.t = setTimeout(cmDraw, 250); });
+    CM.map.on('moveend', () => { clearTimeout(CM.t); CM.t = setTimeout(cmDraw, 300); });
     const sp = M.spot || cfg.meteoSpot || favs()[0];
     CM.map.setView(sp ? [sp.lat, sp.lon] : [46.6, 2.4], sp ? 9 : 6);
   } else setTimeout(() => { CM.map.invalidateSize(); cmDraw(); }, 60);
@@ -34,7 +34,7 @@ function cmBase() {
 function cmDraw() {
   if (!CM.map || !CM.layer) return;
   drawDbSpots(CM.map, CM.layer, cmTap, cmTime(), {
-    minZoom: 7, cap: 160, onlyOk: CM.onlyOk,
+    minZoom: 7, cap: 160, onlyOk: CM.onlyOk, timeFn: cmTime,
     onCount: (n, tot, nb) => {
       $('cmCount').innerHTML = CM.map.getZoom() < 7
         ? 'Zoome pour voir tous les spots de glisse (tes spots restent affichés)'
@@ -91,7 +91,14 @@ async function openLocal(center) {
   if (center) CM.loc = center;
   if (!CM.loc) {
     $('cmLocList').innerHTML = '<div class="empty" style="padding:14px">Localisation…</div>';
-    return hereThen(async (la, lo) => { CM.loc = { lat: la, lon: lo, name: (await reverseGeocode(la, lo)) || 'Ma position' }; renderLocal(); }) || renderLocal();
+    if (!navigator.geolocation) { $('cmLocList').innerHTML = '<div class="empty" style="padding:14px">Localisation indisponible : utilise « Centre de la carte ».</div>'; return; }
+    navigator.geolocation.getCurrentPosition(async p => {
+      CM.loc = { lat: p.coords.latitude, lon: p.coords.longitude, name: 'ma position' }; renderLocal();
+      const nm = await reverseGeocode(p.coords.latitude, p.coords.longitude); if (nm && CM.loc) { CM.loc.name = nm; $('cmLocTitle').textContent = `Autour de ${nm}`; }
+    }, err => {
+      $('cmLocList').innerHTML = `<div class="empty" style="padding:14px">${err && err.code === 1 ? 'Localisation refusée : autorise la position pour ce site dans Chrome (🔒 à gauche de l\'adresse), ou' : 'Position introuvable pour l\'instant :'} déplace la carte puis touche « ⌖ Centre de la carte ».</div>`;
+    }, { enableHighAccuracy: false, timeout: 12000, maximumAge: 300000 });
+    return;
   }
   renderLocal();
 }
@@ -144,5 +151,5 @@ async function renderLocal() {
 $('cmLocalBtn').onclick = () => openLocal();
 $('cmLocClose').onclick = () => { $('cmLocal').classList.remove('on', 'mini'); if (CM.circle) { CM.circle.remove(); CM.circle = null; } CM.paintLocal = null; };
 $('cmLocHere').onclick = () => { CM.loc = null; openLocal(); };
-$('cmLocCenter').onclick = async () => { if (!CM.map) return; const c = CM.map.getCenter(); CM.loc = { lat: c.lat, lon: c.lng, name: (await reverseGeocode(c.lat, c.lng)) || 'centre de la carte' }; renderLocal(); };
+$('cmLocCenter').onclick = async () => { if (!CM.map) return; const b = CM.map.getBounds(), c = CM.map.getCenter ? CM.map.getCenter() : { lat: (b.getSouth() + b.getNorth()) / 2, lng: (b.getWest() + b.getEast()) / 2 }; CM.loc = { lat: c.lat, lon: c.lng, name: (await reverseGeocode(c.lat, c.lng)) || 'centre de la carte' }; renderLocal(); };
 $('cmLocToggle').onclick = () => $('cmLocal').classList.toggle('mini');

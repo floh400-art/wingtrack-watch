@@ -5,7 +5,7 @@
    ========================================================================= */
 const SDB = { list: null, loading: null, at: 0 };
 const KIND = { kite: { i: '🪁', l: 'Kite' }, windsurf: { i: '🏄', l: 'Windsurf' }, wing: { i: '🪽', l: 'Wing' }, surf: { i: '🌊', l: 'Surf' }, beach: { i: '🏖️', l: 'Plage' } };
-try { localStorage.removeItem('wt_spotdb'); } catch (e) {} // ancienne liste trop restreinte
+try { localStorage.removeItem('wt_spotdb'); localStorage.removeItem('wt_spotdb3'); } catch (e) {} // anciennes listes
 
 /* ---------- plages (spots possibles), chargées par zone quand on zoome ---------- */
 const BEACH = { cells: new Map(), loading: new Set() };
@@ -24,13 +24,9 @@ async function loadBeaches(map, box) {
   cells.forEach(x => BEACH.loading.add(x[2]));
   const S = Math.min(...cells.map(x => x[0])) * BCELL, N = (Math.max(...cells.map(x => x[0])) + 1) * BCELL, W = Math.min(...cells.map(x => x[1])) * BCELL, E = (Math.max(...cells.map(x => x[1])) + 1) * BCELL;
   try {
-    const j = await overpass(`[out:json][timeout:40];(nwr["natural"="beach"](${S},${W},${N},${E});nwr["leisure"="beach_resort"](${S},${W},${N},${E}););out center tags;`);
+    const beaches = await osmJob({ type: 'beaches', q: `[out:json][timeout:40];(nwr["natural"="beach"](${S},${W},${N},${E});nwr["leisure"="beach_resort"](${S},${W},${N},${E}););out center tags;` });
     const per = new Map(cells.map(x => [x[2], []]));
-    (j.elements || []).forEach(e => {
-      const lat = e.lat ?? (e.center && e.center.lat), lon = e.lon ?? (e.center && e.center.lon); if (lat == null) return;
-      const k = Math.floor(lat / BCELL) + ',' + Math.floor(lon / BCELL);
-      if (per.has(k)) per.get(k).push({ n: (e.tags && (e.tags.name || e.tags['name:fr'])) || '', lat: +lat.toFixed(5), lon: +lon.toFixed(5), k: ['beach'] });
-    });
+    beaches.forEach(b => { const k = Math.floor(b.lat / BCELL) + ',' + Math.floor(b.lon / BCELL); if (per.has(k)) per.get(k).push(b); });
     per.forEach((list, k) => BEACH.cells.set(k, { at: Date.now(), list }));
     saveBeaches(); return true;
   } catch (e) { return false; } finally { cells.forEach(x => BEACH.loading.delete(x[2])); }
@@ -46,50 +42,36 @@ const kmBetween = (a, b) => WTStats.dist([0, a.lat, a.lon], [0, b.lat, b.lon]) /
 
 // Overpass (OpenStreetMap) : tous les lieux tagués kitesurf / windsurf / wing en Europe
 const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
-const OV_QUERY = `[out:json][timeout:180];
-(
-  nwr["sport"~"kite|windsurf|wing_?foil|wingsurf",i](34,-12,71,35);
-  nwr["kitesurfing"~"yes|designated"](34,-12,71,35);
-  nwr["kiteboarding"~"yes|designated"](34,-12,71,35);
-  nwr["windsurfing"~"yes|designated"](34,-12,71,35);
-  nwr["name"~"kite ?surf|kitesurf|kiteboard|kite spot|kite beach|windsurf|wing ?foil|wingsurf|spot de kite",i](34,-12,71,35);
-);
-out center tags;`;
+const BB = '(34,-12,71,35)';
+const OV_QUERIES = [
+  `[out:json][timeout:90];(nwr["sport"~"kite|windsurf|wing",i]${BB};nwr["kitesurfing"~"yes|designated"]${BB};nwr["windsurfing"~"yes|designated"]${BB};nwr["kiteboarding"~"yes|designated"]${BB};);out center tags;`,
+  `[out:json][timeout:90];(nwr["leisure"~"sports_centre|beach_resort|marina|sports_hall"]["name"~"kite|windsurf|wing ?foil",i]${BB};nwr["shop"~"sports|water_sports|surf|outdoor"]["name"~"kite|windsurf|wing ?foil",i]${BB};nwr["club"]["name"~"kite|windsurf|wing ?foil",i]${BB};nwr["natural"="beach"]["name"~"kite|windsurf",i]${BB};nwr["amenity"~"school|training"]["name"~"kite|windsurf|wing ?foil",i]${BB};);out center tags;`,
+];
+// processus en arrière-plan (évite les gels de l'écran)
+const OSMW = { w: null, n: 0, cb: new Map() };
+function osmJob(msg) {
+  if (!OSMW.w) {
+    try {
+      OSMW.w = new Worker('osmworker.js');
+      OSMW.w.onmessage = ev => { const f = OSMW.cb.get(ev.data.id); if (f) { OSMW.cb.delete(ev.data.id); f(ev.data); } };
+    } catch (e) { return Promise.reject(e); }
+  }
+  const id = ++OSMW.n;
+  return new Promise((res, rej) => { OSMW.cb.set(id, d => d.ok ? res(d.data) : rej(new Error(d.err))); OSMW.w.postMessage({ ...msg, id }); });
+}
 async function loadSpotDB(force) {
   if (SDB.list && !force) return SDB.list;
   if (SDB.loading) return SDB.loading;
   if (!force) {
     try {
-      const c = JSON.parse(localStorage.getItem('wt_spotdb3') || 'null');
+      const c = JSON.parse(localStorage.getItem('wt_spotdb4') || 'null');
       if (c && c.list && Date.now() - c.at < 30 * 86400e3) { SDB.list = c.list; SDB.at = c.at; return SDB.list; }
     } catch (e) {}
   }
   SDB.loading = (async () => {
-    let j = null;
-    for (const url of OVERPASS) {
-      try {
-        const r = await fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(OV_QUERY), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
-        if (r.ok) { j = await r.json(); break; }
-      } catch (e) {}
-    }
-    if (!j) throw new Error('Overpass indisponible');
-    const seen = new Set(), list = [];
-    (j.elements || []).forEach(e => {
-      const lat = e.lat ?? (e.center && e.center.lat), lon = e.lon ?? (e.center && e.center.lon);
-      if (lat == null || lon == null) return;
-      const t = e.tags || {}, sp = (t.sport || '').toLowerCase(), nm = (t.name || '').toLowerCase();
-      if (t.highway || t.route || t.railway) return; // rues « Kite Street »… : on ignore
-      const k = [];
-      if (/kite/.test(sp) || /yes|designated/.test(t.kitesurfing || t.kiteboarding || '') || /kite/.test(nm)) k.push('kite');
-      if (/windsurf/.test(sp) || /yes|designated/.test(t.windsurfing || '') || /windsurf/.test(nm)) k.push('windsurf');
-      if (/wing/.test(sp) || /wing ?foil|wingsurf/.test(nm)) k.push('wing');
-      if (!k.length) return;
-      const key = lat.toFixed(3) + ',' + lon.toFixed(3);
-      if (seen.has(key)) return; seen.add(key);
-      list.push({ n: t.name || t['name:fr'] || '', lat: +lat.toFixed(5), lon: +lon.toFixed(5), k, c: t['addr:city'] || t['is_in'] || '' });
-    });
+    const list = await osmJob({ type: 'spotdb', qs: OV_QUERIES });
     SDB.list = list; SDB.at = Date.now();
-    try { localStorage.setItem('wt_spotdb3', JSON.stringify({ at: SDB.at, list })); } catch (e) {}
+    setTimeout(() => { try { localStorage.setItem('wt_spotdb4', JSON.stringify({ at: SDB.at, list })); } catch (e) {} }, 500);
     return list;
   })();
   try { return await SDB.loading; } finally { SDB.loading = null; }
@@ -222,27 +204,49 @@ function visibleSpots(map, minZoom = 8, cap = 150) {
   }
   return out;
 }
+function watchMoves(map) {
+  if (map._wtWatch) return; map._wtWatch = true;
+  map.on('movestart', () => { map._wtMoving = true; });
+  map.on('moveend', () => { map._wtMoving = false; });
+}
+function scheduleRedraw(map, layer, onTap, tStr, opts) {
+  clearTimeout(layer._wtRT);
+  layer._wtRT = setTimeout(() => drawDbSpots(map, layer, onTap, opts.timeFn ? opts.timeFn() : tStr, opts), 350);
+}
 function drawDbSpots(map, layer, onTap, tStr, opts = {}) {
   if (!map || !layer) return;
-  layer.clearLayers();
+  watchMoves(map);
+  if (map._wtMoving) return; // on redessinera à la fin du déplacement
+  const cache = layer._wt || (layer._wt = new Map()), seen = new Set();
   const list = visibleSpots(map, opts.minZoom ?? 8, opts.cap ?? 150);
   let shown = { ok: 0, mid: 0, no: 0, off: 0 };
   list.forEach(s => {
     const c = condAt(s, tStr), r = rateCond(c), side = c ? sideOf(c.d, shoreOf(s)) : null;
     if (r) shown[r]++; if (r === 'ok' && side === 'off') shown.off++;
     if (opts.onlyOk && r !== 'ok' && !s.fav) return;
-    const sz = r === 'ok' ? 30 : 18;
-    const icon = L.divIcon({ className: '', html: condHtml(r, s, side), iconSize: [sz, sz], iconAnchor: [sz / 2, sz / 2] });
+    const key = s.lat.toFixed(4) + ',' + s.lon.toFixed(4); seen.add(key);
+    const html = condHtml(r, s, side), sz = r === 'ok' ? 30 : 18;
     const tip = `${esc(s.name)}${c && c.w != null ? ` · ${wf(c.w)} (raf. ${wf(c.g)}) ${wUnit()} ${dirName(c.d)}` : ''}${side ? ` · ${SIDES[side].l}${side === 'off' ? ' ⚠ ' + SIDES[side].d : ''}` : ''}`;
-    L.marker([s.lat, s.lon], { icon, zIndexOffset: s.fav ? 900 : r === 'ok' ? 700 : 300 }).addTo(layer)
-      .bindTooltip(tip, s.fav ? { permanent: true, direction: 'right', offset: [10, 0], className: 'stip' } : { direction: 'top', offset: [0, -10] })
-      .on('click', ev => { L.DomEvent.stopPropagation(ev); onTap(s); });
+    let v = cache.get(key);
+    if (!v) {
+      v = { s, html, tip, r };
+      v.m = L.marker([s.lat, s.lon], { icon: L.divIcon({ className: '', html, iconSize: [sz, sz], iconAnchor: [sz / 2, sz / 2] }), zIndexOffset: s.fav ? 900 : r === 'ok' ? 700 : 300 }).addTo(layer)
+        .bindTooltip(tip, s.fav ? { permanent: true, direction: 'right', offset: [10, 0], className: 'stip' } : { direction: 'top', offset: [0, -10] })
+        .on('click', ev => { L.DomEvent.stopPropagation(ev); onTap(v.s); });
+      cache.set(key, v);
+    } else {
+      v.s = s;
+      if (v.html !== html) { v.m.setIcon(L.divIcon({ className: '', html, iconSize: [sz, sz], iconAnchor: [sz / 2, sz / 2] })); v.html = html; }
+      if (v.tip !== tip && v.m.setTooltipContent) { v.m.setTooltipContent(tip); v.tip = tip; }
+    }
   });
+  cache.forEach((v, k) => { if (!seen.has(k)) { layer.removeLayer(v.m); cache.delete(k); } });
   if (opts.onCount) opts.onCount(shown, list.length, list.filter(x => x.beach).length);
-  loadBeaches(map).then(changed => { if (changed) drawDbSpots(map, layer, onTap, tStr, opts); });
-  // charge les conditions et l'orientation des plages manquantes puis redessine
-  fetchCond(list).then(changed => { if (changed) drawDbSpots(map, layer, onTap, tStr, opts); });
-  if (typeof ensureShoreArea === 'function') ensureShoreArea(map, list).then(changed => { if (changed) drawDbSpots(map, layer, onTap, tStr, opts); });
+  // données manquantes : chargées en arrière-plan, puis UN seul redessin regroupé
+  const again = changed => { if (changed) scheduleRedraw(map, layer, onTap, tStr, opts); };
+  loadBeaches(map).then(again);
+  fetchCond(list).then(again);
+  if (typeof ensureShoreArea === 'function') ensureShoreArea(map, list).then(again);
 }
 const mxTimeStr = () => (M.field !== 'off' && typeof fieldTime === 'function' && fieldTime()) || null;
 const wmTimeStr = () => (WM.grid ? WM.grid.T[WM.t] : null);
