@@ -97,6 +97,8 @@ async function cmLoad(list) {
     if (typeof ensureShoreArea === 'function') changed = (await ensureShoreArea(CM.map, list)) || changed;
   } catch (e) {} finally { CM.loadBusy = false; }
   if (changed) cmDraw();
+  // limite gratuite atteinte : on recharge tout seul après la pause
+  if (Date.now() < OM_COOL) { clearTimeout(CM.rt); CM.rt = setTimeout(cmDraw, OM_COOL - Date.now() + 1500); }
   if (CM.loadAgain) { CM.loadAgain = false; cmLoad(visibleSpots(CM.map, 7, 160)); }
 }
 function cmTap(s) {

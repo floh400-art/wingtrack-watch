@@ -42,7 +42,7 @@ class WindField {
     this.busy = true;
     try {
       const b = this.map.getBounds(), z = this.map.getZoom();
-      const target = 46 / (256 * Math.pow(2, z) / 360);
+      const target = 80 / (256 * Math.pow(2, z) / 360); // ~1 point tous les 80 px : léger pour la limite gratuite Open-Meteo
       const S0 = b.getSouth(), N0 = b.getNorth(), W0 = b.getWest(), E0 = b.getEast();
       // grilles emboîtées (chaque pas = 2 × le précédent) : en dézoomant on garde exactement
       // les mêmes points que de près, donc les mêmes valeurs → mêmes couleurs
@@ -50,28 +50,37 @@ class WindField {
       const minStep = { meteofrance_seamless: 0.025, icon_seamless: 0.05, ukmo_seamless: 0.1, ecmwf_ifs025: 0.2, gfs_seamless: 0.2 }[model] || 0.1;
       let step = NEST.find(d => d >= Math.max(minStep, target)) || 3.2;
       const count = d => (Math.floor((N0 - S0) / d) + 3) * (Math.floor((E0 - W0) / d) + 3);
-      while (count(step) > 400 && NEST.indexOf(step) < NEST.length - 1) step = NEST[NEST.indexOf(step) + 1];
+      while (count(step) > 170 && NEST.indexOf(step) < NEST.length - 1) step = NEST[NEST.indexOf(step) + 1];
       const r0 = Math.floor(S0 / step) - 1, r1 = Math.ceil(N0 / step) + 1, c0 = Math.floor(W0 / step) - 1, c1 = Math.ceil(E0 / step) + 1;
       const pk = (r, c) => `cm|${model}|${step}|${r}|${c}`;
       const need = [];
       for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) { const v = WM_PTS.get(pk(r, c)); if (!v || Date.now() - v.at > 3600e3) need.push([r, c]); }
+      let err = null;
       for (let i = 0; i < need.length; i += 100) {
         const part = need.slice(i, i + 100);
-        let j = await getJSON(`${OM}?latitude=${part.map(([r]) => (r * step).toFixed(3)).join(',')}&longitude=${part.map(([, c]) => (c * step).toFixed(3)).join(',')}&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m,pressure_msl&forecast_days=7&timezone=GMT&models=${model}`);
+        let j;
+        try { j = await getJSON(`${OM}?latitude=${part.map(([r]) => (r * step).toFixed(3)).join(',')}&longitude=${part.map(([, c]) => (c * step).toFixed(3)).join(',')}&hourly=wind_speed_10m,wind_direction_10m&forecast_days=7&timezone=GMT&models=${model}`); }
+        catch (e) { err = e; break; } // on affiche quand même ce qu'on a déjà
         if (model !== (this.model || 'meteofrance_seamless')) return; // modèle changé entre-temps
         if (!Array.isArray(j)) j = [j];
         j.forEach((x, k) => WM_PTS.set(pk(part[k][0], part[k][1]), { at: Date.now(), h: x && x.hourly }));
       }
+      // un point manquant peut venir d'une autre grille (mêmes coordonnées, grilles emboîtées)
+      const get = (r, c) => {
+        let v = WM_PTS.get(pk(r, c)); if (v && v.h) return v;
+        for (const s2 of NEST) { if (s2 === step) continue; const k = step / s2, R = r * k, C = c * k; if (Math.abs(R - Math.round(R)) > 1e-6 || Math.abs(C - Math.round(C)) > 1e-6) continue; v = WM_PTS.get(`cm|${model}|${s2}|${Math.round(R)}|${Math.round(C)}`); if (v && v.h) return v; }
+        return null;
+      };
       // assemblage de la grille
       const rows = r1 - r0 + 1, cols = c1 - c0 + 1, n = rows * cols;
       let first = null;
-      for (let r = r0; r <= r1 && !first; r++) for (let c = c0; c <= c1; c++) { const v = WM_PTS.get(pk(r, c)); if (v && v.h && v.h.time) { first = v.h; break; } }
-      if (!first) return;
+      for (let r = r0; r <= r1 && !first; r++) for (let c = c0; c <= c1; c++) { const v = get(r, c); if (v && v.h && v.h.time) { first = v.h; break; } }
+      if (!first) { if (err) throw err; return; }
       const off = -new Date().getTimezoneOffset() * 60e3;
       const T = first.time.map(t => new Date(Date.parse(t + ':00Z') + off).toISOString().slice(0, 16)), nT = T.length;
       const U = new Float32Array(nT * n).fill(NaN), V = new Float32Array(nT * n).fill(NaN), S = new Float32Array(nT * n).fill(NaN);
       for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
-        const v = WM_PTS.get(pk(r, c)); if (!v || !v.h || !v.h.wind_speed_10m) continue;
+        const v = get(r, c); if (!v || !v.h || !v.h.wind_speed_10m) continue;
         const h = v.h, k = (r - r0) * cols + (c - c0);
         for (let t = 0; t < nT; t++) {
           const w = h.wind_speed_10m[t], d = h.wind_direction_10m[t]; if (w == null || d == null) continue;
@@ -82,7 +91,14 @@ class WindField {
       const i = this.tStr ? T.indexOf(this.tStr) : -1;
       this.t = i >= 0 ? i : Math.max(0, T.indexOf(new Date(Date.now() + off).toISOString().slice(0, 13) + ':00'));
       this.place(); this.drawHeat(); this.resetParts();
-    } catch (e) { /* hors ligne ou limite atteinte : on réessaiera au prochain déplacement */ }
+      if (err) throw err; // → nouvel essai après la pause
+    } catch (e) {
+      // limite gratuite atteinte : on réessaie tout seul après la pause (sinon le vent reste en « carré »)
+      if (e.message === '429') {
+        if (!this.warned) { this.warned = true; toast('Trop de demandes météo : le vent animé se complète dans 1 min'); }
+        clearTimeout(this.rt); this.rt = setTimeout(() => this.load(), Math.max(5e3, OM_COOL - Date.now() + 1e3));
+      }
+    }
     finally { this.busy = false; if (this.again) { this.again = false; this.load(); } }
   }
   sample(lat, lon) {
