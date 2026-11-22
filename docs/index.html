@@ -205,6 +205,14 @@ textarea{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line)
 .rpline{margin-top:6px;font-size:13px;color:var(--mut);font-variant-numeric:tabular-nums}
 .rpmk{width:30px;height:30px;display:flex;align-items:center;justify-content:center}
 .rpmk svg{width:28px;height:28px;fill:#ffb84d;stroke:#06141f;stroke-width:1.5;filter:drop-shadow(0 1px 3px rgba(0,0,0,.7))}
+.sbar{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:0 12px;margin-top:4px}
+.sbar input{flex:1;background:none;border:0;color:var(--txt);font:inherit;font-size:16px;padding:13px 0;outline:none;min-width:0}
+.sbar button{background:none;color:var(--mut);font-size:16px}
+.sresults{background:var(--card);border-radius:14px;margin-top:6px;overflow:hidden;max-height:60vh;overflow-y:auto}
+.sresults:empty{display:none}
+.sres-h{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--mut);padding:10px 12px 4px;font-weight:700}
+.sres{cursor:pointer}.sres .sico{width:26px;text-align:center;font-size:18px}.sres small{display:block;color:var(--mut);font-size:12px;margin-top:1px}.sres .sgo{color:var(--mut);font-size:20px}
+.dbmk{width:22px;height:22px;border-radius:11px;background:rgba(255,255,255,.92);display:flex;align-items:center;justify-content:center;font-size:12px;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 </style>
 </head>
 <body>
@@ -347,10 +355,12 @@ textarea{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line)
 <section id="meteo" class="view">
   <div class="row"><h1 class="grow">Météo</h1><button class="btn small" id="mxBig2">🌬️ Carte</button><button class="btn small" id="mxUnit" title="Changer d'unité">km/h</button><button class="btn small" id="mxRefresh">↻</button></div>
   <p class="sub" id="mxStatus"></p>
+  <div class="sbar"><span>🔍</span><input type="search" id="mxQ" placeholder="Rechercher un spot ou une ville (ex. dunk)" autocomplete="off" enterkeyhint="search"><button id="mxQClear" style="display:none">✕</button></div>
+  <div id="mxRes" class="sresults"></div>
+  <p class="cap" style="margin-top:6px"><span id="sdbStatus"></span> <a href="#" id="sdbRefresh" class="wr" style="font-size:12px">mettre à jour</a></p>
   <h2 style="margin-top:6px">Mes spots</h2>
   <div class="spotgrid" id="mxSpotList"></div>
   <div class="chips" id="mxChips" style="margin-top:12px"></div>
-  <div id="mxSearch" style="display:none"><input type="text" id="mxQ" placeholder="Ville, plage, spot…" autocomplete="off"><div id="mxRes" class="evlist" style="margin-top:8px"></div></div>
   <h1 class="spotname" id="mxSpot"></h1>
   <div class="seg scroll" id="mxModels"></div>
   <div id="mxBody"></div>
@@ -419,5 +429,6 @@ textarea{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line)
 <script src="carnet.js"></script>
 <script src="wmap.js"></script>
 <script src="replay.js"></script>
+<script src="spots.js"></script>
 </body>
 </html>

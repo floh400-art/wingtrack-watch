@@ -45,6 +45,7 @@ function openWindMap() {
     renderWmBars();
   } else setTimeout(() => { WM.map.invalidateSize(); placeCanvases(); drawHeat(); resetParticles(); }, 50);
   drawWmSpots();
+  if (typeof refreshDbMarkers === 'function') refreshDbMarkers();
   startAnim();
 }
 $('wmClose').onclick = () => { stopPlay(); stopAnim(); show('meteo'); };

@@ -179,6 +179,7 @@ function slots(d, model) {
 /* ---------- rendu ---------- */
 async function renderMeteo(force) {
   paintUnitBtn();
+  if (typeof ensureSpotDB === 'function') ensureSpotDB();
   if (!M.spot) M.spot = cfg.meteoSpot || null;
   await renderSpotChips();
   renderModelBar();
@@ -529,27 +530,12 @@ async function renderSpotChips() {
   try { mine = groupSpots(await DB.all()).sort((a, b) => b.last - a.last).map(sp => ({ name: sp.name, lat: sp.c[0], lon: sp.c[1] })); } catch (e) {}
   M.sessionSpots = mine;
   const list = mine.filter(s => !isFav(s));
-  $('mxChips').innerHTML = `<button class="chip2 add" id="mxNew">＋ Créer un spot</button><button class="chip2" id="mxHere">📍 Ma position</button><button class="chip2" id="mxFind">🔍 Chercher</button>`
+  $('mxChips').innerHTML = `<button class="chip2 add" id="mxNew">＋ Créer un spot</button><button class="chip2" id="mxHere">📍 Ma position</button>`
     + list.map((s, k) => `<button class="chip2 ${M.spot && sameSpot(s, M.spot) ? 'on' : ''}" data-k="${k}">🏄 ${esc(s.name)}</button>`).join('');
   document.querySelectorAll('#mxChips [data-k]').forEach(b => b.onclick = () => setSpot(list[+b.dataset.k]));
   $('mxNew').onclick = () => createSpot();
   $('mxHere').onclick = () => hereThen(async (la, lo) => setSpot({ name: (await reverseGeocode(la, lo)) || 'Ma position', lat: la, lon: lo }));
-  $('mxFind').onclick = () => { $('mxSearch').style.display = $('mxSearch').style.display === 'none' ? '' : 'none'; $('mxQ').focus(); };
 }
-let searchT = null;
-$('mxQ').oninput = () => {
-  clearTimeout(searchT);
-  const q = $('mxQ').value.trim();
-  if (q.length < 2) { $('mxRes').innerHTML = ''; return; }
-  searchT = setTimeout(async () => {
-    try {
-      const j = await getJSON(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=6&language=fr`);
-      const r = j.results || [];
-      $('mxRes').innerHTML = r.length ? r.map((x, k) => `<div class="ev" data-k="${k}"><span class="grow"><b>${esc(x.name)}</b> <small>${esc([x.admin1, x.country].filter(Boolean).join(', '))}</small></span></div>`).join('') : '<div class="empty">Aucun résultat</div>';
-      document.querySelectorAll('#mxRes [data-k]').forEach(el => el.onclick = () => { const x = r[+el.dataset.k]; $('mxSearch').style.display = 'none'; $('mxQ').value = ''; $('mxRes').innerHTML = ''; setSpot({ name: x.name, lat: x.latitude, lon: x.longitude }); });
-    } catch (e) { $('mxRes').innerHTML = '<div class="empty">Recherche indisponible hors ligne</div>'; }
-  }, 350);
-};
 function renderModelBar() {
   const avail = M.data ? Object.keys(M.data.models) : MODELS.map(m => m.id);
   $('mxModels').innerHTML = MODELS.filter(m => avail.includes(m.id)).map(m => `<button class="${M.model === m.id ? 'on' : ''}" data-m="${m.id}">${m.name}</button>`).join('') + `<button class="${M.model === 'compare' ? 'on' : ''}" data-m="compare">Comparer</button>`;
@@ -571,6 +557,7 @@ function showSpotMap() {
   }
   setTimeout(() => M.map.invalidateSize(), 60);
   drawSpotMarkers();
+  if (typeof refreshDbMarkers === 'function') refreshDbMarkers();
   if (M.spot && !M.centered) { M.map.setView([M.spot.lat, M.spot.lon], 10); M.centered = true; }
   else loadField();
 }
