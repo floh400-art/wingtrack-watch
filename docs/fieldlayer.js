@@ -18,11 +18,22 @@ class WindField {
     this.heat.style.display = this.part.style.display = b ? '' : 'none';
     if (b) { this.place(); this.load(); this.start(); } else this.stop();
   }
-  setTime(tStr) { this.tStr = tStr; if (this.grid) { const i = this.grid.T.indexOf(tStr); this.t = i >= 0 ? i : this.t; this.drawHeat(); } }
+  setTime(tStr) {
+    this.tStr = tStr; if (!this.grid) return;
+    const i = this.grid.T.indexOf(tStr); this.t = i >= 0 ? i : this.t;
+    if (this.hp) return; this.hp = requestAnimationFrame(() => { this.hp = null; this.drawHeat(); });
+  }
   place() {
     const sz = this.map.getSize(), tl = this.map.containerPointToLayerPoint([0, 0]);
     [this.heat, this.part].forEach(cv => { if (cv.width !== sz.x || cv.height !== sz.y) { cv.width = sz.x; cv.height = sz.y; } L.DomUtil.setPosition(cv, tl); });
+    // projection pré-calculée : longitude linéaire en x, latitude par ligne de pixels (Mercator)
+    const a = this.map.containerPointToLatLng([0, 0]), b = this.map.containerPointToLatLng([sz.x, 0]);
+    this.lng0 = a.lng; this.dLng = (b.lng - a.lng) / (sz.x || 1);
+    const lr = new Float64Array(sz.y + 1);
+    for (let y = 0; y <= sz.y; y++) lr[y] = this.map.containerPointToLatLng([0, y]).lat;
+    this.latRow = lr;
   }
+  ll(x, y) { const lr = this.latRow, yi = Math.max(0, Math.min(lr.length - 1, y | 0)); return [lr[yi], this.lng0 + x * this.dLng]; }
   async load() {
     if (!this.on || this.busy) return;
     this.busy = true;
@@ -30,9 +41,9 @@ class WindField {
       const b = this.map.getBounds(), z = this.map.getZoom();
       const target = 46 / (256 * Math.pow(2, z) / 360);
       const S0 = b.getSouth(), N0 = b.getNorth(), W0 = b.getWest(), E0 = b.getEast();
-      let step = LADDER.find(d => d >= target) || 3;
+      let step = LADDER.find(d => d >= Math.max(0.1, target)) || 3;
       const count = d => (Math.floor((N0 - S0) / d) + 3) * (Math.floor((E0 - W0) / d) + 3);
-      while (count(step) > 380 && LADDER.indexOf(step) < LADDER.length - 1) step = LADDER[LADDER.indexOf(step) + 1];
+      while (count(step) > 400 && LADDER.indexOf(step) < LADDER.length - 1) step = LADDER[LADDER.indexOf(step) + 1];
       const r0 = Math.floor(S0 / step) - 1, r1 = Math.ceil(N0 / step) + 1, c0 = Math.floor(W0 / step) - 1, c1 = Math.ceil(E0 / step) + 1;
       const pk = (r, c) => `wind|best|${step}|${r}|${c}`;
       const need = [];
@@ -70,11 +81,11 @@ class WindField {
     const g = this.grid; if (!g) return null;
     const fx = (lon - g.w) / (g.e - g.w) * (g.cols - 1), fy = (lat - g.s) / (g.n - g.s) * (g.rows - 1);
     if (fx < 0 || fy < 0 || fx > g.cols - 1 || fy > g.rows - 1) return null;
-    const x0 = Math.min(g.cols - 2, Math.floor(fx)), y0 = Math.min(g.rows - 2, Math.floor(fy)), dx = fx - x0, dy = fy - y0, base = this.t * g.n;
+    const x0 = Math.min(g.cols - 2, Math.floor(fx)), y0 = Math.min(g.rows - 2, Math.floor(fy)), dx = fx - x0, dy = fy - y0, base = this.t * g.n + y0 * g.cols + x0;
+    const I = [base, base + 1, base + g.cols, base + g.cols + 1], K = this._k || (this._k = new Float64Array(4));
+    K[0] = (1 - dx) * (1 - dy); K[1] = dx * (1 - dy); K[2] = (1 - dx) * dy; K[3] = dx * dy;
     let u = 0, v = 0, s = 0, w = 0;
-    [[x0, y0, (1 - dx) * (1 - dy)], [x0 + 1, y0, dx * (1 - dy)], [x0, y0 + 1, (1 - dx) * dy], [x0 + 1, y0 + 1, dx * dy]].forEach(([x, y, k]) => {
-      const i = base + y * g.cols + x; if (isNaN(g.S[i]) || !k) return; u += g.U[i] * k; v += g.V[i] * k; s += g.S[i] * k; w += k;
-    });
+    for (let j = 0; j < 4; j++) { const i = I[j], k = K[j]; if (!k || isNaN(g.S[i])) continue; u += g.U[i] * k; v += g.V[i] * k; s += g.S[i] * k; w += k; }
     return w < 0.25 ? null : { u: u / w, v: v / w, s: s / w };
   }
   drawHeat() {
@@ -83,11 +94,12 @@ class WindField {
     if (!W || !H) return;
     c.clearRect(0, 0, W, H);
     if (!this.grid) return;
-    const st = 5, w = Math.ceil(W / st), h = Math.ceil(H / st);
-    const off = document.createElement('canvas'); off.width = w; off.height = h;
+    if (!this.latRow || this.latRow.length !== H + 1) this.place();
+    const st = 8, w = Math.ceil(W / st), h = Math.ceil(H / st);
+    const off = this._off || (this._off = document.createElement('canvas')); off.width = w; off.height = h;
     const oc = off.getContext('2d'), img = oc.createImageData(w, h), d = img.data;
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      const ll = this.map.containerPointToLatLng([x * st + st / 2, y * st + st / 2]), s = this.sample(ll.lat, ll.lng), i = (y * w + x) * 4;
+      const ll = this.ll(x * st + st / 2, y * st + st / 2), s = this.sample(ll[0], ll[1]), i = (y * w + x) * 4;
       if (!s) continue;
       const col = windRGB(s.s); d[i] = col[0]; d[i + 1] = col[1]; d[i + 2] = col[2]; d[i + 3] = 255;
     }
@@ -99,19 +111,19 @@ class WindField {
   }
   resetParts() {
     const W = this.part.width, H = this.part.height;
-    this.parts = Array.from({ length: Math.round(W * H / 2200) }, () => ({ x: Math.random() * W, y: Math.random() * H, age: Math.random() * 60 }));
+    this.parts = Array.from({ length: Math.min(220, Math.round(W * H / 3000)) }, () => ({ x: Math.random() * W, y: Math.random() * H, age: Math.random() * 60 }));
   }
   start() {
     this.stop();
     const tick = () => {
       this.raf = requestAnimationFrame(tick);
-      if (!this.on || !this.grid || this.moving || document.hidden) return;
+      if (!this.on || !this.grid || this.moving || document.hidden || (this.fr = !this.fr)) return; // ~30 i/s
       const cv = this.part, c = cv.getContext('2d'), W = cv.width, H = cv.height; if (!W) return;
       c.globalCompositeOperation = 'destination-in'; c.fillStyle = 'rgba(0,0,0,0.9)'; c.fillRect(0, 0, W, H);
       c.globalCompositeOperation = 'source-over'; c.strokeStyle = 'rgba(255,255,255,0.8)'; c.lineWidth = 1.3; c.beginPath();
-      const k = 0.18 * Math.max(0.6, Math.min(1.6, (this.map.getZoom() - 4) / 5));
+      const k = 0.36 * Math.max(0.6, Math.min(1.6, (this.map.getZoom() - 4) / 5));
       this.parts.forEach(p => {
-        const ll = this.map.containerPointToLatLng([p.x, p.y]), s = this.sample(ll.lat, ll.lng);
+        const ll = this.ll(p.x, p.y), s = this.sample(ll[0], ll[1]);
         if (!s || p.age++ > 90) { p.x = Math.random() * W; p.y = Math.random() * H; p.age = 0; return; }
         const nx = p.x + s.u * k, ny = p.y - s.v * k; c.moveTo(p.x, p.y); c.lineTo(nx, ny); p.x = nx; p.y = ny;
         if (nx < 0 || ny < 0 || nx > W || ny > H) { p.x = Math.random() * W; p.y = Math.random() * H; p.age = 0; }
