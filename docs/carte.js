@@ -20,7 +20,9 @@ function openCarte() {
     CM.sc = new SpotCanvas(CM.map); CM.layer = true;
     watchMoves(CM.map);
     // toucher un spot / une balise, sinon : créer un spot ici / prévisions
+    CM.map.on('popupclose', () => { CM.pc = Date.now(); });
     CM.map.on('click', e => {
+      if (Date.now() - (CM.pc || 0) < 450) return; // ce toucher servait à fermer la fiche
       const h = CM.sc.hit(e.containerPoint);
       if (!h) return cmEmptyTap(e.latlng.lat, e.latlng.lng);
       if (h.type === 'sta') stationPopup(CM.map, h.st, x => { show('meteo'); setSpot({ name: x.name, lat: x.lat, lon: x.lon }); });
@@ -136,13 +138,31 @@ function cmStop() { if (CM.playing) { clearInterval(CM.playing); CM.playing = nu
 
 /* ---------- toucher une zone vide : créer un spot ---------- */
 async function cmEmptyTap(lat, lon) {
-  const pop = L.popup({ maxWidth: 240 }).setLatLng([lat, lon]).setContent('<div class="pop">…</div>').openOn(CM.map);
-  const name = (await reverseGeocode(lat, lon)) || `Point ${lat.toFixed(3)}, ${lon.toFixed(3)}`;
-  pop.setContent(`<div class="pop"><b>${esc(name)}</b><br><small>${lat.toFixed(4)}, ${lon.toFixed(4)}</small><br><button class="btn small pri" id="ceNew">＋ Créer un spot ici</button> <button class="btn small" id="ceGo">Prévisions</button></div>`);
-  setTimeout(() => {
-    const a = document.getElementById('ceNew'), b = document.getElementById('ceGo');
-    if (a) a.onclick = async () => { CM.map.closePopup(); await createSpot(lat, lon, name); show('carte'); cmDraw(); };
-    if (b) b.onclick = () => { CM.map.closePopup(); show('meteo'); setSpot({ name, lat, lon }); };
-  }, 0);
+  const t = cmTime(), mName = (MODELS.find(m => m.id === condModel()) || {}).name || '';
+  const pt = { lat, lon }, est = CM.field && CM.field.on ? CM.field.sample(lat, lon) : null;
+  let name = `Point ${lat.toFixed(3)}, ${lon.toFixed(3)}`;
+  const pop = L.popup({ maxWidth: 260, autoPanPadding: [20, 140] }).setLatLng([lat, lon]);
+  const paint = () => {
+    const c = condAt(pt, t), side = c ? sideOf(c.d, shoreOf(pt)) : null;
+    const wind = c && c.w != null
+      ? `<span class="pill" style="background:${windColor(c.w)};color:${windTxt(c.w)}">${wf(c.w)}</span> raf. ${wf(c.g)} ${wUnit()} ${arrow(c.d, '#06141f')} ${dirName(c.d)}${side ? `<br>${sideBadge(c.d, shoreOf(pt))}` : ''}`
+      : est ? `≈ <span class="pill" style="background:${windColor(est.s)};color:${windTxt(est.s)}">${wf(est.s)}</span> ${wUnit()} <small>(chargement…)</small>` : `<small>${omLimitTxt() || 'Vent en cours de chargement…'}</small>`;
+    pop.setContent(`<div class="pop"><b>${esc(name)}</b><br>${wind}<br><small>${mName} · ${dayLabel(t.slice(0, 10))} · ${t.slice(11, 16)}</small><br><button class="btn small pri" id="ceGo">Prévisions</button> <button class="btn small" id="ceNew">＋ Créer un spot</button></div>`);
+    setTimeout(() => {
+      const a = document.getElementById('ceNew'), b = document.getElementById('ceGo');
+      if (a) a.onclick = async () => { CM.map.closePopup(); await createSpot(lat, lon, name); show('carte'); cmDraw(); };
+      if (b) b.onclick = () => { CM.map.closePopup(); show('meteo'); setSpot({ name, lat, lon }); };
+    }, 0);
+  };
+  paint(); pop.openOn(CM.map);
+  const alive = () => CM.map.hasLayer(pop);
+  reverseGeocode(lat, lon).then(n => { if (n) { name = n; if (alive()) paint(); } }).catch(() => {});
+  if (!condAt(pt, t)) {
+    try {
+      const x = await getJSON(`${OM}?latitude=${lat.toFixed(3)}&longitude=${lon.toFixed(3)}&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m&forecast_days=7&timezone=auto&models=${condModel()}`);
+      if (x && x.hourly) COND.set(ckey(pt), { at: Date.now(), off: x.utc_offset_seconds || 0, time: x.hourly.time, ws: x.hourly.wind_speed_10m, wg: x.hourly.wind_gusts_10m, wd: x.hourly.wind_direction_10m });
+    } catch (e) {}
+    if (alive()) paint();
+  }
 }
 $('cmStaBtn').onclick = () => { cfg.showStations = cfg.showStations === false ? true : false; saveCfg(); $('cmStaBtn').classList.toggle('off', cfg.showStations === false); toast(cfg.showStations === false ? 'Balises masquées' : 'Balises de vent en direct affichées'); cmDraw(); };

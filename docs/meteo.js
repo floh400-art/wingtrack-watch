@@ -78,7 +78,8 @@ try { const c = JSON.parse(localStorage.getItem('wt_omcool') || 'null'); if (c &
 async function getJSON(url) {
   const om = /open-meteo\.com/.test(url);
   if (om && Date.now() < OM_COOL) throw new Error('429');
-  const r = await fetch(url);
+  let r;
+  try { r = await fetch(url); } catch (e) { if (om) OM_ERR = { t: Date.now(), msg: 'pas de réseau' }; throw e; }
   if (r.status === 429 && om) {
     // minute / heure / jour : le service dit quelle limite gratuite est atteinte
     let why = ''; try { why = (await r.json()).reason || ''; } catch (e) {}
@@ -89,11 +90,17 @@ async function getJSON(url) {
     try { localStorage.setItem('wt_omcool', JSON.stringify({ t: OM_COOL, w: OM_WHY })); } catch (e) {}
     throw new Error('429');
   }
-  if (!r.ok) throw new Error(r.status);
+  if (!r.ok) {
+    let why = ''; try { why = (await r.clone().json()).reason || ''; } catch (e) {}
+    if (om) OM_ERR = { t: Date.now(), msg: `erreur ${r.status}${why ? ' : ' + why : ''}` };
+    throw new Error(r.status);
+  }
+  if (om) OM_ERR = null;
   return r.json();
 }
+let OM_ERR = null;
 function omLimitTxt() {
-  if (Date.now() >= OM_COOL) return '';
+  if (Date.now() >= OM_COOL) return OM_ERR && Date.now() - OM_ERR.t < 5 * 60e3 ? `⚠ Service météo indisponible (${OM_ERR.msg})` : '';
   const m = Math.ceil((OM_COOL - Date.now()) / 60e3);
   return `⏳ Limite météo gratuite atteinte (par ${OM_WHY || 'minute'}) : reprise dans ${m < 60 ? m + ' min' : Math.round(m / 60) + ' h'}`;
 }
