@@ -101,6 +101,9 @@ function renderWmPanel() {
     <div class="wmp-grid three">${Object.entries(WM_RES).map(([k, r]) => btn(WM.res === k, `data-r="${k}"`, `${r.l}<small>${r.d}</small>`)).join('')}</div>
     <h3>Fond de carte</h3>
     <div class="wmp-grid four">${Object.entries(WM_BASES).map(([k, b]) => btn((cfg.wmBase || 'dark') === k, `data-b="${k}"`, `${b.l}<small>${b.d}</small>`)).join('')}</div>
+    <h3>Transparence des couleurs</h3>
+    <div class="wmp-op"><button class="${cfg.wmOpacity == null || cfg.wmOpacity === 'auto' ? 'on' : ''}" id="wmOpAuto">Auto (selon le zoom)</button>
+      <input type="range" id="wmOp" min="20" max="90" step="5" value="${Math.round(heatOpacity() * 100)}"><span id="wmOpV">${Math.round(heatOpacity() * 100)} %</span></div>
     <h3>Affichage</h3>
     ${tog('wmIso', WM.iso, 'Isobares + centres H / L' + (isWave() ? ' <small>(couches vent)</small>' : ''))}
     ${tog('wmAnimT', WM.anim2, 'Traînées animées')}
@@ -110,8 +113,10 @@ function renderWmPanel() {
   document.querySelectorAll('#wmPanelBody [data-l]').forEach(b => b.onclick = () => { WM.layer = b.dataset.l; cfg.wmLayer = WM.layer; saveCfg(); re(); });
   document.querySelectorAll('#wmPanelBody [data-m]').forEach(b => b.onclick = () => { WM.model = b.dataset.m; cfg.wmModel = WM.model; saveCfg(); re(); });
   document.querySelectorAll('#wmPanelBody [data-r]').forEach(b => b.onclick = () => { WM.res = b.dataset.r; cfg.wmRes = WM.res; saveCfg(); re(); });
-  document.querySelectorAll('#wmPanelBody [data-b]').forEach(b => b.onclick = () => { cfg.wmBase = b.dataset.b; saveCfg(); setWmBase(); renderWmPanel(); });
+  document.querySelectorAll('#wmPanelBody [data-b]').forEach(b => b.onclick = () => { cfg.wmBase = b.dataset.b; saveCfg(); setWmBase(); renderWmPanel(); applyHeatOpacity(); });
   document.querySelectorAll('#wmPanelBody [data-u]').forEach(b => b.onclick = () => { cfg.unit = b.dataset.u; saveCfg(); renderWmBars(); paintTime(); });
+  $('wmOp').oninput = () => { cfg.wmOpacity = +$('wmOp').value / 100; saveCfg(); $('wmOpV').textContent = $('wmOp').value + ' %'; $('wmOpAuto').classList.remove('on'); applyHeatOpacity(); };
+  $('wmOpAuto').onclick = () => { cfg.wmOpacity = 'auto'; saveCfg(); renderWmPanel(); applyHeatOpacity(); };
   $('wmIso').onclick = () => { WM.iso = !WM.iso; cfg.wmIso = WM.iso; saveCfg(); renderWmPanel(); drawHeat(); };
   $('wmAnimT').onclick = () => { WM.anim2 = !WM.anim2; cfg.wmAnim = WM.anim2; saveCfg(); renderWmPanel(); };
 }
@@ -255,13 +260,27 @@ function drawHeat() {
       const ll = x === 0 ? ll0 : WM.map.containerPointToLatLng([x * step + step / 2, y * step + step / 2]);
       const s = sample(ll.lat, ll.lng, WM.t), i = (y * w + x) * 4;
       if (!s) { d[i + 3] = 0; continue; }
-      const col = colorOf(s.s); d[i] = col[0]; d[i + 1] = col[1]; d[i + 2] = col[2]; d[i + 3] = 190;
+      const col = colorOf(s.s); d[i] = col[0]; d[i + 1] = col[1]; d[i + 2] = col[2]; d[i + 3] = 255;
     }
   }
   oc.putImageData(img, 0, 0);
   c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
   c.drawImage(off, 0, 0, W, H);
+  applyHeatOpacity();
   if (WM.iso && WM.grid.hasP) drawIsobars(c, W, H);
+}
+
+// Transparence : automatique selon le zoom (plus on zoome, plus on voit les côtes et les villes) ou réglée à la main
+function heatOpacity() {
+  if (cfg.wmOpacity != null && cfg.wmOpacity !== 'auto') return +cfg.wmOpacity;
+  const z = WM.map ? WM.map.getZoom() : 6;
+  return Math.max(0.35, Math.min(0.8, 0.8 - (z - 6) * 0.075));
+}
+function applyHeatOpacity() {
+  if (!WM.heat) return;
+  WM.heat.style.opacity = heatOpacity();
+  // fonds clairs : les couleurs se mélangent au plan (routes, côtes, noms restent lisibles)
+  WM.heat.style.mixBlendMode = (cfg.wmBase === 'light' || cfg.wmBase === 'street') ? 'multiply' : 'normal';
 }
 
 /* ---------- isobares + centres H / L ---------- */
