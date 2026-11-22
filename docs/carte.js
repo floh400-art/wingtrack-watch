@@ -35,10 +35,10 @@ function cmDraw() {
   if (!CM.map || !CM.layer) return;
   drawDbSpots(CM.map, CM.layer, cmTap, cmTime(), {
     minZoom: 7, cap: 160, onlyOk: CM.onlyOk,
-    onCount: (n, tot) => {
+    onCount: (n, tot, nb) => {
       $('cmCount').innerHTML = CM.map.getZoom() < 7
         ? 'Zoome pour voir tous les spots de glisse (tes spots restent affichés)'
-        : `<b style="color:#16a34a">${n.ok} bons</b>${n.off ? ` (dont ${n.off} ⚠ vent de terre)` : ''} · <b style="color:#f59e0b">${n.mid} moyens</b> · ${n.no} sans vent · ${tot} spots`;
+        : `<b style="color:#16a34a">${n.ok} bons</b>${n.off ? ` (dont ${n.off} ⚠ vent de terre)` : ''} · <b style="color:#f59e0b">${n.mid} moyens</b> · ${n.no} sans vent · ${tot - (nb || 0)} spots${nb ? ` + ${nb} plages` : CM.map.getZoom() < 10 ? ' · zoome pour voir aussi les plages' : ''}`;
     },
   });
 }
@@ -82,6 +82,8 @@ function localSpots(lat, lon, rkm) {
   favs().forEach(s => push(s, { name: s.name, fav: true, icon: '★' }));
   (M.sessionSpots || []).forEach(s => push(s, { name: s.name, icon: '🏄' }));
   (SDB.list || []).forEach(s => push(s, { name: spotLabel(s), icon: spotIcon(s) }));
+  const dLat = rkm / 110.5, dLon = rkm / (111.3 * Math.cos(lat * Math.PI / 180));
+  beachesIn(lat - dLat, lat + dLat, lon - dLon, lon + dLon).forEach(s => push(s, { name: s.n || 'Plage', icon: '🏖️', beach: true }));
   return out.sort((a, b) => a.d - b.d).slice(0, 150);
 }
 async function openLocal(center) {
@@ -107,6 +109,8 @@ async function renderLocal() {
       CM.map.fitBounds(CM.circle.getBounds(), { padding: [10, 10] });
     }
   }
+  // plages de la zone (jusqu'à 60 km de rayon, sinon trop de données)
+  if (r <= 60) { const dLa = r / 110.5, dLo = r / (111.3 * Math.cos(lat * Math.PI / 180)); await loadBeaches(null, [lat - dLa, lat + dLa, lon - dLo, lon + dLo]); }
   const list = localSpots(lat, lon, r);
   const paint = () => {
     const t = cmTime();

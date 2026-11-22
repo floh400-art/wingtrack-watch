@@ -4,16 +4,55 @@
    + recherche unifiée : mes spots, spots de glisse, villes
    ========================================================================= */
 const SDB = { list: null, loading: null, at: 0 };
-const KIND = { kite: { i: '🪁', l: 'Kite' }, windsurf: { i: '🏄', l: 'Windsurf' }, wing: { i: '🪽', l: 'Wing' }, surf: { i: '🌊', l: 'Surf' } };
+const KIND = { kite: { i: '🪁', l: 'Kite' }, windsurf: { i: '🏄', l: 'Windsurf' }, wing: { i: '🪽', l: 'Wing' }, surf: { i: '🌊', l: 'Surf' }, beach: { i: '🏖️', l: 'Plage' } };
+try { localStorage.removeItem('wt_spotdb'); } catch (e) {} // ancienne liste trop restreinte
+
+/* ---------- plages (spots possibles), chargées par zone quand on zoome ---------- */
+const BEACH = { cells: new Map(), loading: new Set() };
+try { const c = JSON.parse(localStorage.getItem('wt_beach') || '{}'); Object.entries(c).forEach(([k, v]) => { if (Date.now() - v.at < 60 * 86400e3) BEACH.cells.set(k, v); }); } catch (e) {}
+const BCELL = 0.25;
+function saveBeaches() { try { const o = {}; BEACH.cells.forEach((v, k) => o[k] = v); localStorage.setItem('wt_beach', JSON.stringify(o)); } catch (e) { /* plein : tant pis */ } }
+async function loadBeaches(map, box) {
+  if (!navigator.onLine) return false;
+  if (!box) { if (!map || map.getZoom() < 10) return false; const b = map.getBounds(); box = [b.getSouth(), b.getNorth(), b.getWest(), b.getEast()]; }
+  const cells = [];
+  for (let r = Math.floor(box[0] / BCELL); r <= Math.floor(box[1] / BCELL); r++)
+    for (let c = Math.floor(box[2] / BCELL); c <= Math.floor(box[3] / BCELL); c++) {
+      const k = r + ',' + c; if (!BEACH.cells.has(k) && !BEACH.loading.has(k)) cells.push([r, c, k]);
+    }
+  if (!cells.length) return false;
+  cells.forEach(x => BEACH.loading.add(x[2]));
+  const S = Math.min(...cells.map(x => x[0])) * BCELL, N = (Math.max(...cells.map(x => x[0])) + 1) * BCELL, W = Math.min(...cells.map(x => x[1])) * BCELL, E = (Math.max(...cells.map(x => x[1])) + 1) * BCELL;
+  try {
+    const j = await overpass(`[out:json][timeout:40];(nwr["natural"="beach"](${S},${W},${N},${E});nwr["leisure"="beach_resort"](${S},${W},${N},${E}););out center tags;`);
+    const per = new Map(cells.map(x => [x[2], []]));
+    (j.elements || []).forEach(e => {
+      const lat = e.lat ?? (e.center && e.center.lat), lon = e.lon ?? (e.center && e.center.lon); if (lat == null) return;
+      const k = Math.floor(lat / BCELL) + ',' + Math.floor(lon / BCELL);
+      if (per.has(k)) per.get(k).push({ n: (e.tags && (e.tags.name || e.tags['name:fr'])) || '', lat: +lat.toFixed(5), lon: +lon.toFixed(5), k: ['beach'] });
+    });
+    per.forEach((list, k) => BEACH.cells.set(k, { at: Date.now(), list }));
+    saveBeaches(); return true;
+  } catch (e) { return false; } finally { cells.forEach(x => BEACH.loading.delete(x[2])); }
+}
+function beachesIn(S, N, W, E) {
+  const out = [];
+  for (let r = Math.floor(S / BCELL); r <= Math.floor(N / BCELL); r++)
+    for (let c = Math.floor(W / BCELL); c <= Math.floor(E / BCELL); c++) { const v = BEACH.cells.get(r + ',' + c); if (v) out.push(...v.list); }
+  return out;
+}
 const norm = s => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const kmBetween = (a, b) => WTStats.dist([0, a.lat, a.lon], [0, b.lat, b.lon]) / 1000;
 
 // Overpass (OpenStreetMap) : tous les lieux tagués kitesurf / windsurf / wing en Europe
 const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
-const OV_QUERY = `[out:json][timeout:120];
+const OV_QUERY = `[out:json][timeout:180];
 (
-  nwr["sport"~"kitesurfing|kiteboarding|windsurfing|wing_foil|wingfoil|wing_foiling|wingsurfing"](34,-12,71,35);
-  nwr["leisure"="beach_resort"]["sport"~"kitesurfing|windsurfing"](34,-12,71,35);
+  nwr["sport"~"kite|windsurf|wing_?foil|wingsurf",i](34,-12,71,35);
+  nwr["kitesurfing"~"yes|designated"](34,-12,71,35);
+  nwr["kiteboarding"~"yes|designated"](34,-12,71,35);
+  nwr["windsurfing"~"yes|designated"](34,-12,71,35);
+  nwr["name"~"kite ?surf|kitesurf|kiteboard|kite spot|kite beach|windsurf|wing ?foil|wingsurf|spot de kite",i](34,-12,71,35);
 );
 out center tags;`;
 async function loadSpotDB(force) {
@@ -21,7 +60,7 @@ async function loadSpotDB(force) {
   if (SDB.loading) return SDB.loading;
   if (!force) {
     try {
-      const c = JSON.parse(localStorage.getItem('wt_spotdb') || 'null');
+      const c = JSON.parse(localStorage.getItem('wt_spotdb3') || 'null');
       if (c && c.list && Date.now() - c.at < 30 * 86400e3) { SDB.list = c.list; SDB.at = c.at; return SDB.list; }
     } catch (e) {}
   }
@@ -38,23 +77,24 @@ async function loadSpotDB(force) {
     (j.elements || []).forEach(e => {
       const lat = e.lat ?? (e.center && e.center.lat), lon = e.lon ?? (e.center && e.center.lon);
       if (lat == null || lon == null) return;
-      const t = e.tags || {}, sp = (t.sport || '').toLowerCase();
+      const t = e.tags || {}, sp = (t.sport || '').toLowerCase(), nm = (t.name || '').toLowerCase();
+      if (t.highway || t.route || t.railway) return; // rues « Kite Street »… : on ignore
       const k = [];
-      if (/kite/.test(sp)) k.push('kite');
-      if (/windsurf/.test(sp)) k.push('windsurf');
-      if (/wing/.test(sp)) k.push('wing');
+      if (/kite/.test(sp) || /yes|designated/.test(t.kitesurfing || t.kiteboarding || '') || /kite/.test(nm)) k.push('kite');
+      if (/windsurf/.test(sp) || /yes|designated/.test(t.windsurfing || '') || /windsurf/.test(nm)) k.push('windsurf');
+      if (/wing/.test(sp) || /wing ?foil|wingsurf/.test(nm)) k.push('wing');
       if (!k.length) return;
       const key = lat.toFixed(3) + ',' + lon.toFixed(3);
       if (seen.has(key)) return; seen.add(key);
       list.push({ n: t.name || t['name:fr'] || '', lat: +lat.toFixed(5), lon: +lon.toFixed(5), k, c: t['addr:city'] || t['is_in'] || '' });
     });
     SDB.list = list; SDB.at = Date.now();
-    try { localStorage.setItem('wt_spotdb', JSON.stringify({ at: SDB.at, list })); } catch (e) {}
+    try { localStorage.setItem('wt_spotdb3', JSON.stringify({ at: SDB.at, list })); } catch (e) {}
     return list;
   })();
   try { return await SDB.loading; } finally { SDB.loading = null; }
 }
-const spotLabel = s => s.n || `Spot ${s.k.map(k => KIND[k].l.toLowerCase()).join(' / ')}`;
+const spotLabel = s => s.n || (s.k[0] === 'beach' ? 'Plage' : `Spot ${s.k.map(k => KIND[k].l.toLowerCase()).join(' / ')}`);
 const spotIcon = s => KIND[s.k[0]].i;
 function dbStatus(txt) { const el = $('sdbStatus'); if (el) el.textContent = txt; }
 async function ensureSpotDB() {
@@ -171,11 +211,13 @@ function visibleSpots(map, minZoom = 8, cap = 150) {
   if (map.getZoom() >= minZoom && SDB.list) {
     // les plus proches du centre de la carte d'abord
     const c = map.getCenter ? map.getCenter() : { lat: (S + N) / 2, lng: (W + E) / 2 };
-    const cand = SDB.list.filter(inB).map(s => ({ s, d: (s.lat - c.lat) ** 2 + ((s.lon - c.lng) * Math.cos(c.lat * Math.PI / 180)) ** 2 })).sort((a, b) => a.d - b.d);
+    const pool = SDB.list.filter(inB);
+    if (map.getZoom() >= 10) beachesIn(S, N, W, E).filter(inB).forEach(bch => { if (!pool.some(p => Math.abs(p.lat - bch.lat) < 0.004 && Math.abs(p.lon - bch.lon) < 0.004)) pool.push({ ...bch, beach: true }); });
+    const cand = pool.map(s => ({ s, d: (s.lat - c.lat) ** 2 + ((s.lon - c.lng) * Math.cos(c.lat * Math.PI / 180)) ** 2 })).sort((a, b) => (a.s.beach ? 1 : 0) - (b.s.beach ? 1 : 0) || a.d - b.d);
     for (const { s } of cand) {
       if (out.length >= cap) break;
       if (out.some(o => Math.abs(o.lat - s.lat) < 0.003 && Math.abs(o.lon - s.lon) < 0.003)) continue;
-      out.push({ name: spotLabel(s), lat: s.lat, lon: s.lon, icon: spotIcon(s) });
+      out.push({ name: s.beach ? (s.n || 'Plage') : spotLabel(s), lat: s.lat, lon: s.lon, icon: spotIcon(s), beach: !!s.beach });
     }
   }
   return out;
@@ -196,7 +238,8 @@ function drawDbSpots(map, layer, onTap, tStr, opts = {}) {
       .bindTooltip(tip, s.fav ? { permanent: true, direction: 'right', offset: [10, 0], className: 'stip' } : { direction: 'top', offset: [0, -10] })
       .on('click', ev => { L.DomEvent.stopPropagation(ev); onTap(s); });
   });
-  if (opts.onCount) opts.onCount(shown, list.length);
+  if (opts.onCount) opts.onCount(shown, list.length, list.filter(x => x.beach).length);
+  loadBeaches(map).then(changed => { if (changed) drawDbSpots(map, layer, onTap, tStr, opts); });
   // charge les conditions et l'orientation des plages manquantes puis redessine
   fetchCond(list).then(changed => { if (changed) drawDbSpots(map, layer, onTap, tStr, opts); });
   if (typeof ensureShoreArea === 'function') ensureShoreArea(map, list).then(changed => { if (changed) drawDbSpots(map, layer, onTap, tStr, opts); });
