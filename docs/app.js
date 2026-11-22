@@ -107,12 +107,107 @@ async function renderHome() {
     <div class="tile"><div class="l">Total sur le foil</div><div class="v">${(rec.foil / 3600).toFixed(1)}<small>h</small></div></div>
     <div class="tile"><div class="l">Jibes foilés (total)</div><div class="v">${rec.fj}</div></div>
     <div class="tile"><div class="l">Tacks foilés (total)</div><div class="v">${rec.ft}</div></div>`;
-  $('sessions').innerHTML = list.length ? list.map(s => `
+  const spots = groupSpots(list);
+  renderSpotsMap(spots);
+  const fSpot = homeFilter != null ? spots.find(sp => sp.key === homeFilter) : null;
+  if (homeFilter != null && !fSpot) homeFilter = null;
+  $('spotFilter').innerHTML = fSpot ? `<button class="chip" id="bClearSpot">📍 ${esc(fSpot.name)} · ${fSpot.sessions.length} sessions  ✕</button>` : '';
+  if (fSpot) $('bClearSpot').onclick = () => { homeFilter = null; renderHome(); };
+  const shown = fSpot ? list.filter(s => fSpot.sessions.includes(s)) : list;
+  $('sessions').innerHTML = shown.length ? shown.map(s => `
     <div class="item" data-id="${s.id}">
-      <div><div class="t">${esc(s.name)}</div><div class="m">${fdate(s.start)}<br>${fd(s.sum.distance)} · ${ft(s.sum.duration)} · ${s.sum.jibes || 0} J · ${s.sum.tacks || 0} T${s.source === 'import' ? ' · importée' : ''}</div></div>
+      <div><div class="t">${esc(s.name)}</div><div class="m">${s.spot ? '📍 ' + esc(s.spot) + ' · ' : ''}${fdate(s.start)}<br>${fd(s.sum.distance)} · ${ft(s.sum.duration)} · ${s.sum.jibes || 0} J · ${s.sum.tacks || 0} T${s.source === 'import' ? ' · importée' : ''}</div></div>
       <div class="s">${fs(s.sum.vmax2)}<small>${uLabel()} max</small></div>
     </div>`).join('') : '<div class="empty">Aucune session pour l\'instant.<br>Lance ta première session ou importe un GPX.</div>';
   document.querySelectorAll('#sessions .item').forEach(e => e.onclick = () => openDetail(e.dataset.id));
+  nameSpots(spots);
+}
+
+/* ---------- spots ---------- */
+const SPOT_R = 2000; // sessions à moins de 2 km = même spot
+let homeFilter = null, homeMap = null, homeLayers = [];
+function sessCenter(s) {
+  if (!s.c) { let la = 0, lo = 0; s.pts.forEach(p => { la += p[1]; lo += p[2]; }); s.c = [la / s.pts.length, lo / s.pts.length]; }
+  return s.c;
+}
+const distLL = (a, b) => WTStats.dist([0, a[0], a[1]], [0, b[0], b[1]]);
+function groupSpots(list) {
+  const spots = [];
+  list.slice().sort((a, b) => a.start - b.start).forEach(s => {
+    if (!s.pts || !s.pts.length) return;
+    const c = sessCenter(s);
+    let sp = spots.find(x => distLL(x.c, c) < SPOT_R);
+    if (!sp) { sp = { c, sessions: [], name: null }; spots.push(sp); }
+    sp.sessions.push(s);
+  });
+  spots.forEach(sp => {
+    sp.name = (sp.sessions.find(s => s.spot) || {}).spot || `Spot ${sp.c[0].toFixed(2)}, ${sp.c[1].toFixed(2)}`;
+    sp.named = sp.sessions.some(s => s.spot);
+    sp.key = sp.c[0].toFixed(4) + ',' + sp.c[1].toFixed(4);
+    sp.vmax = Math.max(...sp.sessions.map(s => s.sum.vmax2));
+    sp.foil = sp.sessions.reduce((a, s) => a + s.sum.foilTime, 0);
+    sp.last = Math.max(...sp.sessions.map(s => s.start));
+  });
+  return spots;
+}
+function renderSpotsMap(spots) {
+  $('spotsBox').style.display = spots.length ? '' : 'none';
+  if (!spots.length || !window.L) return;
+  if (!homeMap) homeMap = makeMap('hmap');
+  if (!homeMap) return;
+  setTimeout(() => homeMap.invalidateSize(), 60);
+  homeLayers.forEach(l => l.remove()); homeLayers = [];
+  spots.forEach(sp => {
+    const icon = L.divIcon({ className: '', html: `<div class="spotmk">${sp.sessions.length}</div>`, iconSize: [30, 30], iconAnchor: [15, 15] });
+    const m = L.marker(sp.c, { icon }).addTo(homeMap);
+    m.bindPopup(`<div class="pop"><b>${esc(sp.name)}</b><br>${sp.sessions.length} session${sp.sessions.length > 1 ? 's' : ''} · dernière le ${new Date(sp.last).toLocaleDateString('fr-FR')}<br>Vmax ${fs(sp.vmax)} ${uLabel()} · ${ft(sp.foil)} sur le foil<br><button class="btn small pri" data-key="${sp.key}">Voir les sessions</button> <button class="btn small" data-ren="${sp.key}">Renommer</button></div>`);
+    m.on('popupopen', e => {
+      const el = e.popup.getElement();
+      el.querySelector('[data-key]').onclick = () => { homeFilter = sp.key; homeMap.closePopup(); renderHome(); $('sessions').scrollIntoView({ behavior: 'smooth' }); };
+      el.querySelector('[data-ren]').onclick = () => { homeMap.closePopup(); renameSpot(sp); };
+    });
+    homeLayers.push(m);
+  });
+  if (homeFilter) { const f = spots.find(sp => sp.key === homeFilter); if (f) { homeMap.setView(f.c, 13); return; } }
+  if (spots.length === 1) homeMap.setView(spots[0].c, 12);
+  else homeMap.fitBounds(L.latLngBounds(spots.map(sp => sp.c)), { padding: [30, 30], maxZoom: 12 });
+}
+async function renameSpot(sp) {
+  const ok = await ask('Nom du spot', { extra: `<input type="text" id="spIn" value="${esc(sp.named ? sp.name : '')}" placeholder="ex. Plage du Prévost" style="margin-bottom:14px">` });
+  if (!ok) return;
+  const name = $('spIn').value.trim(); if (!name) return;
+  for (const s of sp.sessions) { s.spot = name; s.spotManual = true; await DB.put(s); }
+  toast('Spot renommé'); if (current === 'home') renderHome(); else if (det.s) { det.s.spot = name; $('dSpot').textContent = '📍 ' + name; }
+}
+// nom automatique du spot (commune la plus proche, via OpenStreetMap)
+const geoTried = new Set();
+let naming = false;
+async function nameSpots(spots) {
+  if (naming || !navigator.onLine) return;
+  naming = true; let changed = false;
+  try {
+    for (const sp of spots) {
+      if (sp.named && sp.sessions.every(s => s.spot)) continue;
+      let name = sp.named ? sp.name : null;
+      if (!name) {
+        if (geoTried.has(sp.key)) continue;
+        geoTried.add(sp.key);
+        name = await reverseGeocode(sp.c[0], sp.c[1]);
+        await new Promise(r => setTimeout(r, 1100)); // 1 requête / s max (règle OpenStreetMap)
+      }
+      if (!name) continue;
+      for (const s of sp.sessions) if (!s.spot) { s.spot = name; await DB.put(s); changed = true; }
+    }
+  } finally { naming = false; }
+  if (changed && current === 'home') renderHome();
+}
+async function reverseGeocode(lat, lon) {
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=14&accept-language=fr`);
+    if (!r.ok) return null;
+    const j = await r.json(), a = j.address || {};
+    return a.village || a.town || a.city || a.municipality || a.suburb || a.county || (j.name || null);
+  } catch (e) { return null; }
 }
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -237,6 +332,7 @@ async function openDetail(id) {
   if (!s.sum || s.sum.v !== WTStats.VERSION || s.foilCfg !== cfg.foil) { s.sum = summarize(s.pts, s.windFlip); s.foilCfg = cfg.foil; DB.put(s); }
   show('detail');
   $('dName').textContent = s.name; $('dDate').textContent = fdate(s.start) + (s.source === 'import' ? ' · importée' : '');
+  $('dSpot').textContent = '📍 ' + (s.spot || 'Spot sans nom') + '  ✎';
   det.st = statsFor(s);
   renderDetail();
 }
@@ -493,6 +589,10 @@ onTouchChart('polar', (x, y) => {
   const a = Math.abs(Math.atan2(dx, -dy) * 180 / Math.PI);
   drawPolar({ b: Math.min(17, Math.floor(a / 10)), side: dx < 0 ? -1 : 1 });
 });
+$('dSpot').onclick = async () => {
+  const all = await DB.all(), sp = groupSpots(all).find(x => x.sessions.some(y => y.id === det.id));
+  if (sp) renameSpot(sp);
+};
 $('bWind').onclick = async () => {
   const s = det.s; s.windFlip = !s.windFlip; s.sum = summarize(s.pts, s.windFlip); await DB.put(s);
   det.st = statsFor(s); renderDetail(); toast('Jibes et tacks recalculés');

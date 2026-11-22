@@ -40,7 +40,7 @@ button{font:inherit;color:inherit;border:0;cursor:pointer}
 .item .s{text-align:right;font-weight:700;color:var(--acc);font-size:18px}
 .item .s small{display:block;color:var(--mut);font-weight:500;font-size:11px}
 .empty{color:var(--mut);text-align:center;padding:30px 10px;border:1px dashed var(--line);border-radius:14px}
-#map,#dmap{height:260px;border-radius:16px;overflow:hidden;border:1px solid var(--line);background:#0a1b27}
+#map,#dmap,#hmap{height:260px;border-radius:16px;overflow:hidden;border:1px solid var(--line);background:#0a1b27}
 #live{padding:0}
 #live .top{padding:12px 16px 0}
 .speed{text-align:center;padding:4px 0 8px}
@@ -90,6 +90,11 @@ canvas.cv{width:100%;display:block;background:var(--card);border:1px solid var(-
 .windrow{margin-top:10px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 12px;font-size:14px}
 .warrow{display:inline-block;color:var(--acc);font-weight:800;margin-right:6px}
 .btn.small{padding:8px 12px;font-size:13px}
+#hmap{height:220px}
+.spotmk{width:30px;height:30px;border-radius:50%;background:var(--acc);color:#04211e;font-weight:800;display:flex;align-items:center;justify-content:center;border:3px solid #06141f;box-shadow:0 0 0 2px var(--acc);box-sizing:border-box}
+.pop{font-size:13px;line-height:1.5}.pop .btn{margin-top:6px;padding:6px 10px;font-size:12px}
+.chip{background:var(--card);border:1px solid var(--acc);color:var(--acc);border-radius:20px;padding:8px 14px;font-weight:600;margin-bottom:10px}
+.spotline{color:var(--acc);font-size:14px;font-weight:600;margin:0 0 14px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -101,7 +106,13 @@ canvas.cv{width:100%;display:block;background:var(--card);border:1px solid var(-
   <button class="btn pri big-start" id="bStart">▶ Démarrer une session</button>
   <h2>Records</h2>
   <div class="grid" id="records"></div>
+  <div id="spotsBox">
+    <h2>Mes spots</h2>
+    <div id="hmap"></div>
+    <p class="cap">Touche un spot pour voir ses sessions ou le renommer</p>
+  </div>
   <h2>Sessions</h2>
+  <div id="spotFilter"></div>
   <div class="list" id="sessions"></div>
 </section>
 
@@ -129,7 +140,7 @@ canvas.cv{width:100%;display:block;background:var(--card);border:1px solid var(-
 <!-- DÉTAIL -->
 <section id="detail" class="view">
   <button class="back" id="bBack">‹ Sessions</button>
-  <div class="row"><div class="grow"><h1 id="dName" style="font-size:22px"></h1><p class="sub" id="dDate"></p></div></div>
+  <div class="row"><div class="grow"><h1 id="dName" style="font-size:22px"></h1><p class="sub" id="dDate" style="margin-bottom:4px"></p><p class="spotline" id="dSpot"></p></div></div>
   <div id="dmap"></div>
   <div class="legend"><span id="lgMin">0</span><span class="bar"></span><span id="lgMax">30</span></div>
   <div class="mlegend"><span><i style="background:#a3e635">▲</i>Décollage</span><span><i style="background:#ffb84d">J</i>Jibe</span><span><i style="background:#60a5fa">T</i>Tack</span><span><i style="background:#ff5d6c">⚡</i>Accél.</span><span><i style="background:#fff;color:#06141f">·</i>Vmax / 10 s</span></div>
