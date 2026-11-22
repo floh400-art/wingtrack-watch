@@ -101,3 +101,16 @@ async function ensureShoreArea(map, spots) {
   } catch (e) { SH_AREAS.delete(key); return false; }
 }
 const sideTag = side => side ? `<span class="sidetag" style="color:${SIDES[side].c}">${side === 'off' ? '⚠ ' : ''}${SIDES[side].l}</span>` : '';
+
+// Icône « plage » : mer en haut, sable en bas, flèche = sens du vent par rapport à la plage
+function shoreIcon(windFrom, shore, size = 26) {
+  const side = sideOf(windFrom, shore); if (!side) return '';
+  const rel = windFrom - shore, col = SIDES[side].c;
+  return `<svg class="shico" width="${size}" height="${size}" viewBox="0 0 26 26" aria-label="${SIDES[side].l}">
+    <rect x="0" y="0" width="26" height="13" rx="4" fill="#1e5f8c"/><path d="M0 9 Q4 7 8 9 T16 9 T26 9 V13 H0Z" fill="#2b7bb0"/>
+    <rect x="0" y="13" width="26" height="13" rx="4" fill="#d9b56b"/><path d="M0 13 Q6 15 13 13 T26 13" stroke="#f2e3b3" stroke-width="1.4" fill="none"/>
+    <g transform="rotate(${rel + 180} 13 13)"><path d="M13 3 L18 11 H14.6 V23 H11.4 V11 H8 Z" fill="${col}" stroke="#06141f" stroke-width="1.2" stroke-linejoin="round"/></g>
+    ${side === 'off' ? '<circle cx="21" cy="21" r="4.5" fill="#ef4444" stroke="#fff" stroke-width="1"/><text x="21" y="23.6" font-size="7" font-weight="900" text-anchor="middle" fill="#fff">!</text>' : ''}
+  </svg>`;
+}
+const sideBadge = (windFrom, shore) => { const sd = sideOf(windFrom, shore); return sd ? `<span class="sidebadge">${shoreIcon(windFrom, shore, 22)}<span style="color:${SIDES[sd].c}">${sd === 'off' ? '⚠ ' : ''}${SIDES[sd].l}</span></span>` : ''; };

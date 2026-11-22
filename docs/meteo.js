@@ -233,7 +233,7 @@ function drawMeteo() {
   if (M.day >= days.length) M.day = 0;
   // créneaux
   const sl = slots(d, M.model === 'compare' ? 'avg' : M.model);
-  const slHtml = sl.length ? sl.slice(0, 5).map(s => `<div class="slot" data-day="${days.indexOf(s.day)}"><b>${dayLabel(s.day)}</b> ${hh(s.from)}–${+s.to.slice(11, 13) + 1}h <span class="grow"></span><span class="pill" style="background:${windColor(s.wmax * KN)};color:${windTxt(s.wmax * KN)}">${Math.round(wv(s.wmin * KN))}–${Math.round(wv(s.wmax * KN))} ${wUnit()}</span> ${arrow(s.dir)} ${dirName(s.dir)} ${typeof sideTag === 'function' ? sideTag(s.side) : ''}</div>`).join('')
+  const slHtml = sl.length ? sl.slice(0, 5).map(s => `<div class="slot" data-day="${days.indexOf(s.day)}"><b>${dayLabel(s.day)}</b> ${hh(s.from)}–${+s.to.slice(11, 13) + 1}h <span class="grow"></span><span class="pill" style="background:${windColor(s.wmax * KN)};color:${windTxt(s.wmax * KN)}">${Math.round(wv(s.wmin * KN))}–${Math.round(wv(s.wmax * KN))} ${wUnit()}</span> ${arrow(s.dir)} ${dirName(s.dir)} ${typeof shoreIcon === 'function' && shoreOf(M.spot) != null ? shoreIcon(s.dir, shoreOf(M.spot), 22) : ''}${typeof sideTag === 'function' ? sideTag(s.side) : ''}</div>`).join('')
     : `<div class="cap" style="margin:0">Aucun créneau entre ${Math.round(wv(cfg.wmin * KN))} et ${Math.round(wv(cfg.wmax * KN))} ${wUnit()} en journée sur 7 jours.</div>`;
   const tex = d.hasTide ? tideExtrema(d.marine.ttime, d.marine.tide) : [];
   const day = days[M.day];
@@ -283,13 +283,17 @@ function tableHtml(d, day) {
   let rows = row('', t => `<td class="hd${cls(t)}">${hh(t)}</td>`, 'hrow');
   const ref = mk || d.models.avg || d.models[Object.keys(d.models)[0]];
   rows += row('', t => { const c = at(ref.code, ref.time, t), tp = at(ref.temp, ref.time, t); return `<td class="${cls(t)}">${wxIcon(c, night(t))}<small>${tp == null ? '' : Math.round(tp) + '°'}</small></td>`; });
+  const shoreB = typeof shoreOf === 'function' ? shoreOf(M.spot) : null;
+  if (shoreB != null) {
+    const dref = mk || d.models.avg || ref;
+    rows += row(`Plage<small>on / off</small>`, t => { const wd0 = at(dref.wd, dref.time, t), sd = sideOf(wd0, shoreB); return `<td class="${cls(t)} shcell">${sd ? shoreIcon(wd0, shoreB, 24) + `<small style="color:${SIDES[sd].c}">${SIDES[sd].s}</small>` : ''}</td>`; });
+  }
   const windCell = (m, t) => { const w = at(m.ws, m.time, t); return `<td class="w${cls(t)}" style="background:${windColor(w)};color:${windTxt(w)}">${wf(w)}</td>`; };
   if (mk) {
     rows += row(`Vent<small>${wUnit()}</small>`, t => windCell(mk, t));
     rows += row('Rafales', t => windCell({ ws: mk.wg, time: mk.time }, t));
     rows += row('Dir.', t => { const dd = at(mk.wd, mk.time, t); return `<td class="${cls(t)}">${arrow(dd)}<small>${dirName(dd)}</small></td>`; });
     const shore = typeof shoreOf === 'function' ? shoreOf(M.spot) : null;
-    if (shore != null) rows += row('Plage', t => { const sd = sideOf(at(mk.wd, mk.time, t), shore); return `<td class="${cls(t)}" style="color:${sd ? SIDES[sd].c : ''};font-weight:700;font-size:11px">${sd ? SIDES[sd].s : ''}</td>`; });
     if (M.model === 'avg') rows += row(`Écart<small>${wUnit()}</small>`, t => { const v = at(mk.spread, mk.time, t); const k = v == null ? null : kn(v); return `<td class="${cls(t)}" style="color:${k == null ? '' : k < 4 ? '#7ccf3c' : k < 8 ? '#e6d23a' : '#ec4b4b'}">${v == null ? '–' : '±' + Math.round(wv(v) / 2)}</td>`; });
   } else {
     modelIds(d).forEach(id => {
@@ -533,7 +537,7 @@ async function renderSpotList() {
   const card = (s, k, q) => {
     const sm = q ? quickSummary(q) : null;
     const sd = sm && typeof sideOf === 'function' ? sideOf(sm.d, shoreOf(s)) : null;
-    const nowTxt = sm && sm.w != null ? `<span class="pill" style="background:${windColor(sm.w)};color:${windTxt(sm.w)}">${wf(sm.w)}</span><small> raf. ${wf(sm.g)} ${wUnit()}</small> ${arrow(sm.d)}<small>${dirName(sm.d)}</small> ${sideTag(sd)}` : '<small>…</small>';
+    const nowTxt = sm && sm.w != null ? `<span class="pill" style="background:${windColor(sm.w)};color:${windTxt(sm.w)}">${wf(sm.w)}</span><small> raf. ${wf(sm.g)} ${wUnit()}</small> ${arrow(sm.d)}<small>${dirName(sm.d)}</small>${sd ? `<div class="sside">${sideBadge(sm.d, shoreOf(s))}</div>` : ''}` : '<small>…</small>';
     const nx = sm ? (sm.next ? `✅ ${sm.next === quickNowKey(q) ? 'Navigable maintenant' : 'Navigable ' + dayLabel(sm.next.slice(0, 10)) + ' ' + hh(sm.next)}` : '— pas de créneau sur 3 j') : '';
     return `<div class="scard ${M.spot && sameSpot(s, M.spot) ? 'on' : ''}" data-k="${k}"><div class="row"><b class="grow">${esc(s.name)}</b><button class="dots" data-e="${k}">⋯</button></div><div class="snow">${nowTxt}</div><div class="snext">${nx}</div></div>`;
   };
@@ -545,7 +549,13 @@ async function renderSpotList() {
     document.querySelectorAll('#mxSpotList [data-e]').forEach(b => b.onclick = e => { e.stopPropagation(); editSpot(+b.dataset.e); });
   };
   paint(cached);
-  try { paint(await quickFetch(list)); } catch (e) {}
+  let res = cached;
+  try { res = await quickFetch(list); paint(res); } catch (e) {}
+  // orientation des plages manquantes, puis on repeint
+  if (typeof ensureShore === 'function') {
+    const miss = list.filter(s => shoreOf(s) == null && SHORE[shKey(s)] == null);
+    if (miss.length) { await Promise.all(miss.map(s => ensureShore(s))); paint(res); }
+  }
 }
 const quickNowKey = j => new Date(Date.now() + (j.utc_offset_seconds || 0) * 1000).toISOString().slice(0, 13) + ':00';
 async function renderSpotChips() {
