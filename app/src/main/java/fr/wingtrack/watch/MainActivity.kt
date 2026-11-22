@@ -85,6 +85,8 @@ private fun fmtTime(s: Double): String {
     val t = s.toLong(); val h = t / 3600; val m = (t % 3600) / 60; val x = t % 60
     return if (h > 0) String.format(Locale.FRANCE, "%d:%02d:%02d", h, m, x) else String.format(Locale.FRANCE, "%d:%02d", m, x)
 }
+private val COMPASS = arrayOf("N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSO", "SO", "OSO", "O", "ONO", "NO", "NNO")
+private fun compass(d: Double) = COMPASS[(Math.round(d / 22.5) % 16).toInt()]
 private fun fmtDate(ms: Long) = SimpleDateFormat("EEE d MMM · HH:mm", Locale.FRANCE).format(Date(ms))
 
 private fun hasLocation(ctx: Context) =
@@ -158,6 +160,7 @@ fun HomeScreen(refresh: Int, onStart: () -> Unit, onHistory: () -> Unit, onSetti
                 Text("Records", fontSize = 11.sp, color = Muted)
                 Text("Max ${fmtSpeed(ctx, rec.vmax2)} · 10 s ${fmtSpeed(ctx, rec.best10)} ${unit(ctx)}", fontSize = 13.sp, textAlign = TextAlign.Center)
                 Text("${rec.turns} sessions · ${fmtTime(rec.foilTime)} foil", fontSize = 11.sp, color = Muted)
+                Text("Foilés : ${rec.foilJibes} jibes · ${rec.foilTacks} tacks", fontSize = 11.sp, color = Muted)
             }
         }
         item { Chip(onClick = onHistory, label = { Text("Historique") }, colors = ChipDefaults.secondaryChipColors(), modifier = Modifier.fillMaxWidth()) }
@@ -194,7 +197,7 @@ fun LiveScreen(activity: MainActivity, s: LiveState) {
             )
         }
         Text(
-            fmtSpeed(ctx, s.speed), fontSize = 58.sp, fontWeight = FontWeight.ExtraBold,
+            fmtSpeed(ctx, s.speed), fontSize = 52.sp, fontWeight = FontWeight.ExtraBold,
             color = if (foil) Teal else Color.White, maxLines = 1,
         )
         Text(unit(ctx), fontSize = 11.sp, color = Muted)
@@ -203,7 +206,8 @@ fun LiveScreen(activity: MainActivity, s: LiveState) {
             Text("Max ${fmtSpeed(ctx, s.vmax)}", fontSize = 13.sp, color = Teal, fontWeight = FontWeight.Bold)
             Text(fmtDist(s.distance), fontSize = 13.sp)
         }
-        Spacer(Modifier.height(8.dp))
+        Text("${s.jibes} J · ${s.tacks} T", fontSize = 12.sp, color = Muted)
+        Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Button(
                 onClick = { TrackingService.send(ctx, TrackingService.ACTION_TOGGLE_PAUSE) },
@@ -258,7 +262,12 @@ fun DetailScreen(id: String, onDeleted: () -> Unit) {
         "Distance" to fmtDist(s.distance),
         "Durée" to fmtTime(s.duration),
         "Sur le foil" to fmtTime(s.foilTime),
-        "Virages" to "${s.turns} (${s.foilTurns} foilés)",
+        "Décollages" to "${s.takeoffs}",
+        "Jibes" to "${s.jibes} (${s.foilJibes} foilés)",
+        "Tacks" to "${s.tacks} (${s.foilTacks} foilés)",
+        "Accélérations" to "${s.accels}",
+        "Meilleure accél." to if (s.bestAccelDt > 0) "+${fmtSpeed(ctx, s.bestAccelGain)} en ${s.bestAccelDt.toInt()} s" else "–",
+        "Vent estimé" to if (s.wind >= 0) "du ${compass(s.wind)}" else "–",
     )
     ScalingLazyColumn(state = st, modifier = Modifier.fillMaxSize()) {
         item { Text(fmtDate(s.start), fontSize = 13.sp, color = Muted, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }

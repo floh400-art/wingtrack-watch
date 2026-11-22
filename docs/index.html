@@ -76,6 +76,19 @@ input[type=text],input[type=number]{width:100%;padding:12px;border-radius:12px;b
 .legend{display:flex;justify-content:space-between;font-size:11px;color:var(--mut);margin-top:6px}
 .legend .bar{flex:1;height:6px;margin:4px 8px;border-radius:3px;background:linear-gradient(90deg,#3b82f6,#22d3c5,#a3e635,#ffb84d,#ff5d6c)}
 .leaflet-container{font:inherit}
+canvas.cv{width:100%;display:block;background:var(--card);border:1px solid var(--line);border-radius:14px;touch-action:pan-y}
+.cap{font-size:12px;color:var(--mut);margin:6px 2px 0;line-height:1.4}
+.mlegend{display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:var(--mut);margin-top:8px}
+.mlegend i,.mk,.evs{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-style:normal;font-size:10px;font-weight:800;color:#06141f;margin-right:4px}
+.mk{width:20px;height:20px;border:2px solid #06141f;box-sizing:border-box;border-radius:10px}
+.evlist{max-height:320px;overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:14px}
+.ev{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line);font-size:13px}
+.ev:last-child{border-bottom:0}
+.ev .evt{color:var(--mut);font-variant-numeric:tabular-nums;min-width:44px}
+.ev .grow{flex:1}
+.windrow{margin-top:10px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 12px;font-size:14px}
+.warrow{display:inline-block;color:var(--acc);font-weight:800;margin-right:6px}
+.btn.small{padding:8px 12px;font-size:13px}
 </style>
 </head>
 <body>
@@ -102,7 +115,7 @@ input[type=text],input[type=number]{width:100%;padding:12px;border-radius:12px;b
     <div class="tile"><div class="l">Meilleur 10 s</div><div class="v" id="l10">0</div></div>
     <div class="tile"><div class="l">Distance</div><div class="v" id="lDist">0</div></div>
     <div class="tile"><div class="l">Sur le foil</div><div class="v" id="lFoil">0:00</div></div>
-    <div class="tile"><div class="l">Virages</div><div class="v" id="lTurns">0</div></div>
+    <div class="tile"><div class="l">Jibes · Tacks</div><div class="v" id="lTurns">0</div></div>
     <div class="tile"><div class="l">Moy. mvt</div><div class="v" id="lAvg">0</div></div>
   </div>
   <div id="map"></div>
@@ -118,12 +131,29 @@ input[type=text],input[type=number]{width:100%;padding:12px;border-radius:12px;b
   <div class="row"><div class="grow"><h1 id="dName" style="font-size:22px"></h1><p class="sub" id="dDate"></p></div></div>
   <div id="dmap"></div>
   <div class="legend"><span id="lgMin">0</span><span class="bar"></span><span id="lgMax">30</span></div>
+  <div class="mlegend"><span><i style="background:#a3e635">▲</i>Décollage</span><span><i style="background:#ffb84d">J</i>Jibe</span><span><i style="background:#60a5fa">T</i>Tack</span><span><i style="background:#ff5d6c">⚡</i>Accél.</span><span><i style="background:#fff;color:#06141f">·</i>Vmax / 10 s</span></div>
   <h2>Vitesse</h2>
   <div class="grid g3" id="dSpeed"></div>
+  <h2>Courbe de vitesse</h2>
+  <canvas id="chart" class="cv" style="height:200px"></canvas>
+  <p class="cap" id="scrub"></p>
+  <h2>Manœuvres</h2>
+  <div class="grid g3" id="dMan"></div>
+  <div class="row windrow"><div class="grow" id="dWind"></div><button class="btn small" id="bWind">Inverser</button></div>
+  <p class="cap">Jibe ou tack dépend du sens du vent, estimé d'après ta trace. Si c'est inversé, touche « Inverser ».</p>
+  <h2>Chronologie</h2>
+  <div id="dEvents" class="evlist"></div>
+  <h2>Vols sur le foil</h2>
+  <canvas id="runs" class="cv" style="height:170px"></canvas>
+  <p class="cap">Un vol = du décollage au retour dans l'eau · hauteur = durée · chiffre = vitesse max · couleur = vitesse moyenne</p>
+  <h2>Temps passé par vitesse</h2>
+  <canvas id="hist" class="cv" style="height:160px"></canvas>
+  <p class="cap">Tranches de 5 <span class="uL">km/h</span> · en couleur : au-dessus du seuil foil</p>
+  <h2>Polaire</h2>
+  <canvas id="polar" class="cv" style="height:280px"></canvas>
+  <p class="cap">Vitesse max selon ton angle par rapport au vent (zone rouge : face au vent)</p>
   <h2>Session</h2>
   <div class="grid g3" id="dSess"></div>
-  <h2>Courbe de vitesse</h2>
-  <canvas id="chart"></canvas>
   <h2>Actions</h2>
   <div class="grid">
     <button class="btn" id="bRename">Renommer</button>

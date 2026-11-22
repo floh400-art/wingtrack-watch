@@ -20,6 +20,9 @@ object SessionStore {
             .put("foilTime", s.foilTime).put("vmax2", s.vmax2).put("best10", s.best10)
             .put("best100m", s.best100m).put("best500m", s.best500m).put("avgMoving", s.avgMoving)
             .put("turns", s.turns).put("foilTurns", s.foilTurns)
+            .put("takeoffs", s.takeoffs).put("jibes", s.jibes).put("foilJibes", s.foilJibes)
+            .put("tacks", s.tacks).put("foilTacks", s.foilTacks).put("accels", s.accels)
+            .put("bestAccelGain", s.bestAccelGain).put("bestAccelDt", s.bestAccelDt).put("wind", s.wind)
         File(dir(ctx), "$id.json").writeText(j.toString())
         File(dir(ctx), "$id.gpx").writeText(gpx(pts))
         return id
@@ -47,6 +50,8 @@ object SessionStore {
             distance = all.maxOfOrNull { it.distance } ?: 0.0,
             foilTime = all.sumOf { it.foilTime },
             turns = all.size,
+            foilJibes = all.sumOf { it.foilJibes },
+            foilTacks = all.sumOf { it.foilTacks },
         )
     }
 
@@ -55,6 +60,10 @@ object SessionStore {
         foilTime = j.getDouble("foilTime"), vmax2 = j.getDouble("vmax2"), best10 = j.getDouble("best10"),
         best100m = j.getDouble("best100m"), best500m = j.getDouble("best500m"),
         avgMoving = j.getDouble("avgMoving"), turns = j.getInt("turns"), foilTurns = j.optInt("foilTurns"),
+        takeoffs = j.optInt("takeoffs"), jibes = j.optInt("jibes"), foilJibes = j.optInt("foilJibes"),
+        tacks = j.optInt("tacks"), foilTacks = j.optInt("foilTacks"), accels = j.optInt("accels"),
+        bestAccelGain = j.optDouble("bestAccelGain", 0.0), bestAccelDt = j.optDouble("bestAccelDt", 0.0),
+        wind = j.optDouble("wind", -1.0),
     )
 
     private fun gpx(pts: List<Pt>): String {

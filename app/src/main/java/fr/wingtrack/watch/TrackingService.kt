@@ -42,6 +42,8 @@ data class LiveState(
     val accuracy: Float? = null,
     val foilTime: Double = 0.0,
     val turns: Int = 0,
+    val jibes: Int = 0,
+    val tacks: Int = 0,
     val savedId: String? = null,
 )
 
@@ -102,7 +104,7 @@ class TrackingService : Service(), LocationListener {
         // reprise d'une session interrompue
         draft?.takeIf { it.exists() }?.forEachLine { line ->
             val a = line.split(',')
-            if (a.size == 3) runCatching { pts.add(Pt(a[0].toLong(), a[1].toDouble(), a[2].toDouble())) }
+            if (a.size >= 3) runCatching { pts.add(Pt(a[0].toLong(), a[1].toDouble(), a[2].toDouble(), a.getOrNull(3)?.toDouble() ?: -1.0)) }
         }
         elapsedMs = if (pts.size > 1) pts.last().t - pts.first().t else 0L
         recordVmax = SessionStore.records(this).vmax2
@@ -122,7 +124,7 @@ class TrackingService : Service(), LocationListener {
                 var s = _state.value.copy(elapsedS = elapsedMs / 1000)
                 if (++n % 3 == 0 && pts.size > 2) {
                     val sum = synchronized(pts) { Stats.compute(ArrayList(pts), foilKmh) }
-                    s = s.copy(vmax = sum.vmax2, best10 = sum.best10, distance = sum.distance, foilTime = sum.foilTime, turns = sum.turns)
+                    s = s.copy(vmax = sum.vmax2, best10 = sum.best10, distance = sum.distance, foilTime = sum.foilTime, turns = sum.turns, jibes = sum.jibes, tacks = sum.tacks)
                     if (sum.vmax2 > recordVmax + 0.15 && sum.vmax2 * 3.6 > 15 && now - lastBuzz > 15000) {
                         lastBuzz = now
                         buzz(longArrayOf(0, 250, 120, 250, 120, 400)) // nouveau record perso
@@ -139,7 +141,7 @@ class TrackingService : Service(), LocationListener {
         _state.value = st.copy(accuracy = loc.accuracy)
         if (!st.running || st.paused) return
         if (!loc.hasAccuracy() || loc.accuracy > 30f) return
-        val p = Pt(loc.time, loc.latitude, loc.longitude)
+        val p = Pt(loc.time, loc.latitude, loc.longitude, if (loc.hasSpeed()) loc.speed.toDouble() else -1.0)
         val prev = pts.lastOrNull()
         var v = if (loc.hasSpeed()) loc.speed.toDouble() else 0.0
         if (prev != null) {
@@ -150,8 +152,9 @@ class TrackingService : Service(), LocationListener {
             if (!loc.hasSpeed()) v = calc
         }
         synchronized(pts) { pts.add(p) }
-        runCatching { draft?.appendText("${p.t},${p.lat},${p.lon}\n") }
-        _state.value = _state.value.copy(speed = v)
+        runCatching { draft?.appendText("${p.t},${p.lat},${p.lon},${p.speed}\n") }
+        val shown = if (prev != null && prev.speed >= 0 && v - prev.speed > 4.0) prev.speed else v // pic isolé
+        _state.value = _state.value.copy(speed = shown)
     }
 
     @Deprecated("Deprecated in Java")

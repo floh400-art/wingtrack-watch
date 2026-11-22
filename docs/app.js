@@ -44,9 +44,13 @@ const DB = (() => {
   };
 })();
 
-function summarize(pts) {
-  const s = WTStats.compute(pts, { foilKmh: cfg.foil });
-  return { distance: s.distance, duration: s.duration, movingTime: s.movingTime, foilTime: s.foilTime, vmax2: s.vmax2, best10: s.best10, best100m: s.best100m, best500m: s.best500m, best1min: s.best1min, avgMoving: s.avgMoving, runs: s.runs, longestRunS: s.longestRunS, longestRunM: s.longestRunM, turns: s.turns, foilTurns: s.foilTurns, maxFromStart: s.maxFromStart, foilDist: s.foilDist };
+const SUM_KEYS = ['v', 'distance', 'duration', 'movingTime', 'foilTime', 'foilDist', 'vmax2', 'best10', 'best1min', 'best100m', 'best500m', 'avgMoving', 'runs', 'longestRunS', 'longestRunM', 'takeoffs', 'turns', 'jibes', 'tacks', 'foilJibes', 'foilTacks', 'foilTurns', 'accels', 'maxFromStart', 'wind', 'windAuto', 'doppler'];
+function statsFor(s) { return WTStats.compute(s.pts, { foilKmh: cfg.foil, windFlip: !!s.windFlip }); }
+function summarize(pts, windFlip) {
+  const r = WTStats.compute(pts, { foilKmh: cfg.foil, windFlip: !!windFlip }), o = {};
+  SUM_KEYS.forEach(k => o[k] = r[k]);
+  o.bestAccel = r.bestAccel ? { gain: r.bestAccel.gain, dt: r.bestAccel.dt } : null;
+  return o;
 }
 async function saveSession(pts, name, source) {
   const start = pts[0][0];
@@ -87,8 +91,12 @@ async function renderHome() {
   let list = [];
   try { list = await DB.all(); } catch (e) { toast('Stockage indisponible'); }
   list.sort((a, b) => b.start - a.start);
-  const rec = { vmax: 0, b10: 0, b500: 0, dist: 0, foil: 0, n: list.length };
-  list.forEach(s => { const u = s.sum; rec.vmax = Math.max(rec.vmax, u.vmax2); rec.b10 = Math.max(rec.b10, u.best10); rec.b500 = Math.max(rec.b500, u.best500m); rec.dist = Math.max(rec.dist, u.distance); rec.foil += u.foilTime; });
+  // recalcule les sessions avec l'ancien moteur de stats ou un autre seuil foil
+  for (const s of list) if (!s.sum || s.sum.v !== WTStats.VERSION || s.foilCfg !== cfg.foil) {
+    s.sum = summarize(s.pts, s.windFlip); s.foilCfg = cfg.foil; try { await DB.put(s); } catch (e) {}
+  }
+  const rec = { vmax: 0, b10: 0, b500: 0, dist: 0, foil: 0, n: list.length, fj: 0, ft: 0 };
+  list.forEach(s => { const u = s.sum; rec.vmax = Math.max(rec.vmax, u.vmax2); rec.b10 = Math.max(rec.b10, u.best10); rec.b500 = Math.max(rec.b500, u.best500m); rec.dist = Math.max(rec.dist, u.distance); rec.foil += u.foilTime; rec.fj += u.foilJibes || 0; rec.ft += u.foilTacks || 0; });
   const [dv, du] = fdN(rec.dist);
   $('records').innerHTML = `
     <div class="tile hl"><div class="l">Vmax (2 s)</div><div class="v">${fs(rec.vmax)}<small>${uLabel()}</small></div></div>
@@ -96,10 +104,12 @@ async function renderHome() {
     <div class="tile"><div class="l">Meilleur 500 m</div><div class="v">${fs(rec.b500)}<small>${uLabel()}</small></div></div>
     <div class="tile"><div class="l">Plus longue session</div><div class="v">${dv}<small>${du}</small></div></div>
     <div class="tile"><div class="l">Sessions</div><div class="v">${rec.n}</div></div>
-    <div class="tile"><div class="l">Total sur le foil</div><div class="v">${(rec.foil / 3600).toFixed(1)}<small>h</small></div></div>`;
+    <div class="tile"><div class="l">Total sur le foil</div><div class="v">${(rec.foil / 3600).toFixed(1)}<small>h</small></div></div>
+    <div class="tile"><div class="l">Jibes foilés (total)</div><div class="v">${rec.fj}</div></div>
+    <div class="tile"><div class="l">Tacks foilés (total)</div><div class="v">${rec.ft}</div></div>`;
   $('sessions').innerHTML = list.length ? list.map(s => `
     <div class="item" data-id="${s.id}">
-      <div><div class="t">${esc(s.name)}</div><div class="m">${fdate(s.start)}<br>${fd(s.sum.distance)} · ${ft(s.sum.duration)} · ${s.sum.turns} virages${s.source === 'import' ? ' · importée' : ''}</div></div>
+      <div><div class="t">${esc(s.name)}</div><div class="m">${fdate(s.start)}<br>${fd(s.sum.distance)} · ${ft(s.sum.duration)} · ${s.sum.jibes || 0} J · ${s.sum.tacks || 0} T${s.source === 'import' ? ' · importée' : ''}</div></div>
       <div class="s">${fs(s.sum.vmax2)}<small>${uLabel()} max</small></div>
     </div>`).join('') : '<div class="empty">Aucune session pour l\'instant.<br>Lance ta première session ou importe un GPX.</div>';
   document.querySelectorAll('#sessions .item').forEach(e => e.onclick = () => openDetail(e.dataset.id));
@@ -146,7 +156,8 @@ function onFix(pos) {
   $('gTxt').textContent = acc <= 10 ? 'GPS précis (±' + Math.round(acc) + ' m)' : 'GPS ±' + Math.round(acc) + ' m';
   live.fixes++;
   if (live.paused) return;
-  const p = [pos.timestamp || Date.now(), +c.latitude.toFixed(7), +c.longitude.toFixed(7), Math.round(acc)];
+  const dop = (c.speed != null && isFinite(c.speed) && c.speed >= 0) ? +c.speed.toFixed(2) : null;
+  const p = [pos.timestamp || Date.now(), +c.latitude.toFixed(7), +c.longitude.toFixed(7), Math.round(acc), dop];
   if (acc > 30) return;
   const prev = live.pts[live.pts.length - 1];
   if (prev && p[0] - prev[0] < 500) return;
@@ -173,7 +184,7 @@ function tick() {
     live.lastStats = s;
     $('lMax').textContent = fs(s.vmax2); $('l10').textContent = fs(s.best10);
     $('lDist').textContent = fd(s.distance); $('lFoil').textContent = ft(s.foilTime);
-    $('lTurns').textContent = s.turns; $('lAvg').textContent = fs(s.avgMoving);
+    $('lTurns').textContent = s.jibes + ' J · ' + s.tacks + ' T'; $('lAvg').textContent = fs(s.avgMoving);
     if (s.vmax2 > live.recVmax + 0.3 && s.vmax2 * 3.6 > 15 && now - live.lastVoiceRec > 20000) {
       live.lastVoiceRec = now; say('Nouvelle vitesse max, ' + fs(s.vmax2) .replace('.', ',') + ' ' + sayUnit());
     }
@@ -209,68 +220,216 @@ function stopLive() {
 const clearDraft = () => { try { localStorage.removeItem('wt_draft'); } catch (e) {} };
 
 /* ---------- détail ---------- */
-let det = { map: null, layers: [], id: null };
+let det = { map: null, layers: [], id: null, st: null, s: null, cursor: null, ev: [] };
+const COMPASS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'];
+const compass = d => COMPASS[Math.round(d / 22.5) % 16];
+const EV = {
+  takeoff: { c: '#a3e635', l: 'Décollage', s: '▲' },
+  touchdown: { c: '#86a6b8', l: 'Retour à l\'eau', s: '▼' },
+  jibe: { c: '#ffb84d', l: 'Jibe', s: 'J' },
+  tack: { c: '#60a5fa', l: 'Tack', s: 'T' },
+  turn: { c: '#c084fc', l: 'Virage', s: 'V' },
+  accel: { c: '#ff5d6c', l: 'Accélération', s: '⚡' },
+};
 async function openDetail(id) {
   const s = await DB.get(id); if (!s) return;
-  det.id = id;
-  // recalcul si le seuil foil a changé
-  if (s.foilCfg !== cfg.foil) { s.sum = summarize(s.pts); s.foilCfg = cfg.foil; DB.put(s); }
+  det.id = id; det.s = s;
+  if (!s.sum || s.sum.v !== WTStats.VERSION || s.foilCfg !== cfg.foil) { s.sum = summarize(s.pts, s.windFlip); s.foilCfg = cfg.foil; DB.put(s); }
   show('detail');
   $('dName').textContent = s.name; $('dDate').textContent = fdate(s.start) + (s.source === 'import' ? ' · importée' : '');
-  const u = s.sum, U = uLabel();
-  const tile = (l, v, unit = '', hl) => `<div class="tile${hl ? ' hl' : ''}"><div class="l">${l}</div><div class="v">${v}${unit ? '<small>' + unit + '</small>' : ''}</div></div>`;
-  $('dSpeed').innerHTML = tile('Vmax (2 s)', fs(u.vmax2), U, 1) + tile('Meilleur 10 s', fs(u.best10), U) + tile('Meilleur 1 min', fs(u.best1min), U)
-    + tile('Meilleur 100 m', fs(u.best100m), U) + tile('Meilleur 500 m', fs(u.best500m), U) + tile('Moy. en mvt', fs(u.avgMoving), U);
-  const [dv, du] = fdN(u.distance), [rv, ru] = fdN(u.longestRunM), [xv, xu] = fdN(u.maxFromStart);
-  $('dSess').innerHTML = tile('Distance', dv, du, 1) + tile('Durée', ft(u.duration)) + tile('Sur le foil', ft(u.foilTime))
-    + tile('Virages', u.turns) + tile('Virages foilés', u.foilTurns) + tile('Bords foilés', u.runs)
-    + tile('Plus long bord', ft(u.longestRunS)) + tile('Bord le + long', rv, ru) + tile('Éloignement max', xv, xu);
-  drawMap(s); drawChart(s);
+  det.st = statsFor(s);
+  renderDetail();
 }
-function drawMap(s) {
+function renderDetail() {
+  const s = det.s, st = det.st, U = uLabel();
+  const tile = (l, v, unit = '', hl) => `<div class="tile${hl ? ' hl' : ''}"><div class="l">${l}</div><div class="v">${v}${unit ? '<small>' + unit + '</small>' : ''}</div></div>`;
+  $('dSpeed').innerHTML = tile('Vmax (2 s)', fs(st.vmax2), U, 1) + tile('Meilleur 10 s', fs(st.best10), U) + tile('Meilleur 1 min', fs(st.best1min), U)
+    + tile('Meilleur 100 m', fs(st.best100m), U) + tile('Meilleur 500 m', fs(st.best500m), U) + tile('Moy. en mvt', fs(st.avgMoving), U);
+  const ba = st.bestAccel;
+  $('dMan').innerHTML = tile('Décollages', st.takeoffs, '', 1)
+    + tile('Jibes', st.jibes, st.jibes ? st.foilJibes + ' foilés' : '')
+    + tile('Tacks', st.tacks, st.tacks ? st.foilTacks + ' foilés' : '')
+    + tile('Accélérations', st.accels)
+    + tile('Meilleure accél.', ba ? '+' + fs(ba.gain, 0) : '–', ba ? U + ' en ' + Math.round(ba.dt) + ' s' : '')
+    + tile('Vols', st.runs);
+  $('dWind').innerHTML = st.wind == null ? 'Vent : pas assez de données pour l\'estimer'
+    : `<span class="warrow" style="transform:rotate(${st.wind + 180}deg)">↑</span> Vent du <b>${compass(st.wind)}</b> (${Math.round(st.wind)}°, estimé d'après ta trace)`;
+  const [dv, du] = fdN(st.distance), [rv, ru] = fdN(st.longestRunM), [xv, xu] = fdN(st.maxFromStart);
+  $('dSess').innerHTML = tile('Distance', dv, du, 1) + tile('Durée', ft(st.duration)) + tile('Sur le foil', ft(st.foilTime))
+    + tile('% sur le foil', st.duration ? Math.round(st.foilTime / st.duration * 100) : 0, '%') + tile('Plus long vol', ft(st.longestRunS)) + tile('Vol le + long', rv, ru)
+    + tile('Éloignement max', xv, xu) + tile('Source vitesse', st.doppler ? 'Doppler' : 'Positions') + tile('Points GPS', st.n);
+  det.ev = st.events.filter(e => e.type !== 'touchdown');
+  $('dEvents').innerHTML = det.ev.length ? det.ev.map((e, k) => {
+    const d = EV[e.type];
+    const extra = e.type === 'accel' ? `+${fs(e.gain, 0)} ${U} en ${Math.round(e.dt)} s (${fs(e.from, 0)} → ${fs(e.to, 0)})`
+      : e.type === 'takeoff' ? 'sur le foil'
+      : `${e.angle}° · ${e.foiled ? 'foilé ✓' : 'touché l\'eau'}`;
+    return `<div class="ev" data-k="${k}"><span class="evs" style="background:${d.c}">${d.s}</span><span class="evt">${ft(e.t)}</span><span class="grow"><b>${d.l}</b> ${extra}</span></div>`;
+  }).join('') : '<div class="empty">Aucun événement détecté</div>';
+  document.querySelectorAll('#dEvents .ev').forEach(el => el.onclick = () => focusEvent(det.ev[+el.dataset.k]));
+  document.querySelectorAll('.uL').forEach(e => e.textContent = uLabel());
+  drawMap(); drawChart(-1); drawHist(); drawRuns(); drawPolar();
+}
+function drawMap() {
   if (!det.map) det.map = makeMap('dmap');
-  const m = det.map; if (!m) return;
+  const m = det.map, st = det.st; if (!m) return;
   setTimeout(() => m.invalidateSize(), 50);
-  det.layers.forEach(l => l.remove()); det.layers = [];
-  const st = WTStats.compute(s.pts, { foilKmh: cfg.foil });
-  const P = st.pts, sp = st.segSpeed; if (P.length < 2) return;
+  det.layers.forEach(l => l.remove()); det.layers = []; det.cursor = null;
+  const P = st.pts, V = st.V; if (!P || P.length < 3) return;
   const max = Math.max(st.vmax2, 20 / 3.6);
   $('lgMin').textContent = '0'; $('lgMax').textContent = fs(max, 0) + ' ' + uLabel();
-  let seg = [[P[0][1], P[0][2]]], col = speedColor(sp[0], max);
+  let seg = [[P[0][1], P[0][2]]], col = speedColor(V[0], max);
   for (let i = 1; i < P.length; i++) {
-    const c = speedColor(sp[i], max); seg.push([P[i][1], P[i][2]]);
+    const c = speedColor(V[i], max); seg.push([P[i][1], P[i][2]]);
     if (c !== col || i === P.length - 1) { det.layers.push(L.polyline(seg, { color: col, weight: 4, opacity: .95 }).addTo(m)); seg = [[P[i][1], P[i][2]]]; col = c; }
   }
-  det.layers.push(L.circleMarker([P[0][1], P[0][2]], { radius: 6, color: '#fff', weight: 2, fillColor: '#22d3c5', fillOpacity: 1 }).addTo(m).bindTooltip('Départ'));
   if (st.best10Range) {
     const [a, b] = st.best10Range;
-    det.layers.push(L.polyline(P.slice(a, b + 1).map(p => [p[1], p[2]]), { color: '#fff', weight: 8, opacity: .5 }).addTo(m).bindTooltip('Meilleur 10 s'));
+    det.layers.push(L.polyline(P.slice(a, b + 1).map(p => [p[1], p[2]]), { color: '#fff', weight: 9, opacity: .45 }).addTo(m).bindTooltip('Meilleur 10 s'));
+  }
+  det.layers.push(L.circleMarker([P[0][1], P[0][2]], { radius: 6, color: '#fff', weight: 2, fillColor: '#22d3c5', fillOpacity: 1 }).addTo(m).bindTooltip('Départ'));
+  det.ev.forEach(e => {
+    const d = EV[e.type], p = P[e.i];
+    const icon = L.divIcon({ className: '', html: `<div class="mk" style="background:${d.c};${e.foiled === false ? 'opacity:.55' : ''}">${d.s}</div>`, iconSize: [20, 20], iconAnchor: [10, 10] });
+    det.layers.push(L.marker([p[1], p[2]], { icon }).addTo(m).bindTooltip(`${d.l} · ${ft(e.t)}`));
+  });
+  if (st.vmaxIdx >= 0) {
+    const p = P[st.vmaxIdx];
+    const icon = L.divIcon({ className: '', html: `<div class="mk" style="background:#fff;color:#06141f;width:auto;padding:0 5px">${fs(st.vmax2)}</div>`, iconSize: [40, 20], iconAnchor: [20, 10] });
+    det.layers.push(L.marker([p[1], p[2]], { icon }).addTo(m).bindTooltip('Vmax'));
   }
   m.fitBounds(L.latLngBounds(P.map(p => [p[1], p[2]])), { padding: [20, 20] });
 }
-function drawChart(s) {
-  const cv = $('chart'), dpr = window.devicePixelRatio || 1;
-  const W = cv.clientWidth, H = cv.clientHeight; cv.width = W * dpr; cv.height = H * dpr;
+function focusEvent(e) {
+  if (!e) return;
+  drawChart(e.i);
+  if (det.map) { const p = det.st.pts[e.i]; det.map.setView([p[1], p[2]], Math.max(det.map.getZoom(), 17)); }
+  $('dmap').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+function prep(id) {
+  const cv = $(id), dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+  cv.width = W * dpr; cv.height = H * dpr;
   const c = cv.getContext('2d'); c.scale(dpr, dpr); c.clearRect(0, 0, W, H);
-  const st = WTStats.compute(s.pts, { foilKmh: cfg.foil });
-  const T = st.T, V = st.segSpeed; if (!T || T.length < 2) return;
-  const pad = { l: 34, r: 8, t: 10, b: 20 }, w = W - pad.l - pad.r, h = H - pad.t - pad.b;
-  const vmax = spd(Math.max(...V, 20 / 3.6)) * 1.1, tmax = T[T.length - 1];
+  c.font = '10px system-ui'; c.lineWidth = 1; return { c, W, H };
+}
+let chartGeom = null;
+function drawChart(cursorIdx) {
+  const st = det.st; const { c, W, H } = prep('chart');
+  const T = st.T, V = st.V; if (!T || T.length < 3) return;
+  const pad = { l: 30, r: 8, t: 22, b: 20 }, w = W - pad.l - pad.r, h = H - pad.t - pad.b;
+  const vmax = spd(Math.max(st.vmax2, 20 / 3.6)) * 1.12, tmax = T[T.length - 1];
   const X = t => pad.l + t / tmax * w, Y = v => pad.t + h - spd(v) / vmax * h;
-  c.font = '10px system-ui'; c.fillStyle = '#86a6b8'; c.strokeStyle = '#183a50'; c.lineWidth = 1;
+  chartGeom = { pad, w, tmax };
+  // bandes : accélérations + meilleur 10 s
+  st.events.filter(e => e.type === 'accel').forEach(e => { c.fillStyle = 'rgba(255,93,108,.18)'; c.fillRect(X(e.t), pad.t, Math.max(2, X(e.t + e.dt) - X(e.t)), h); });
+  if (st.best10Range) { const [a, b] = st.best10Range; c.fillStyle = 'rgba(255,255,255,.12)'; c.fillRect(X(T[a]), pad.t, Math.max(2, X(T[b]) - X(T[a])), h); }
+  c.fillStyle = '#86a6b8'; c.strokeStyle = '#183a50';
   const step = vmax > 40 ? 10 : 5;
-  for (let v = 0; v <= vmax; v += step) { const y = pad.t + h - v / vmax * h; c.beginPath(); c.moveTo(pad.l, y); c.lineTo(W - pad.r, y); c.stroke(); c.fillText(v, 6, y + 3); }
-  const tStep = tmax > 5400 ? 1800 : tmax > 1800 ? 600 : 300;
+  for (let v = 0; v <= vmax; v += step) { const y = pad.t + h - v / vmax * h; c.beginPath(); c.moveTo(pad.l, y); c.lineTo(W - pad.r, y); c.stroke(); c.fillText(v, 4, y + 3); }
+  const tStep = tmax > 5400 ? 1800 : tmax > 1800 ? 600 : tmax > 600 ? 300 : 60;
   for (let t = 0; t <= tmax; t += tStep) c.fillText(Math.round(t / 60) + ' min', X(t) - 10, H - 5);
-  // seuil foil
   const fy = Y(cfg.foil / 3.6); c.setLineDash([4, 4]); c.strokeStyle = '#ffb84d'; c.beginPath(); c.moveTo(pad.l, fy); c.lineTo(W - pad.r, fy); c.stroke(); c.setLineDash([]);
-  // courbe (décimée)
-  const stepI = Math.max(1, Math.floor(T.length / (w * 1.5)));
-  const g = c.createLinearGradient(0, pad.t, 0, pad.t + h); g.addColorStop(0, 'rgba(34,211,197,.35)'); g.addColorStop(1, 'rgba(34,211,197,0)');
+  // courbe
+  const stepI = Math.max(1, Math.floor(T.length / (w * 2)));
   c.beginPath(); c.moveTo(X(T[0]), Y(V[0]));
   for (let i = stepI; i < T.length; i += stepI) { if (T[i] - T[i - stepI] > 30) c.moveTo(X(T[i]), Y(V[i])); else c.lineTo(X(T[i]), Y(V[i])); }
-  c.strokeStyle = '#22d3c5'; c.lineWidth = 1.5; c.stroke();
+  c.strokeStyle = '#22d3c5'; c.lineWidth = 1.5; c.stroke(); c.lineWidth = 1;
+  // marqueurs d'événements en haut
+  c.font = 'bold 9px system-ui'; c.textAlign = 'center';
+  det.ev.filter(e => e.type !== 'accel').forEach(e => {
+    const d = EV[e.type], x = X(e.t);
+    c.fillStyle = d.c; c.globalAlpha = e.foiled === false ? .5 : 1;
+    c.beginPath(); c.arc(x, 9, 7, 0, 7); c.fill();
+    c.fillStyle = '#06141f'; c.fillText(d.s === '▲' ? '▲' : d.s, x, 12); c.globalAlpha = 1;
+    c.strokeStyle = d.c + '55'; c.beginPath(); c.moveTo(x, 16); c.lineTo(x, pad.t + h); c.stroke();
+  });
+  // Vmax
+  if (st.vmaxIdx >= 0) { const x = X(T[st.vmaxIdx]), y = Y(st.vmax2); c.fillStyle = '#fff'; c.beginPath(); c.arc(x, y, 3.5, 0, 7); c.fill(); c.textAlign = x > W - 50 ? 'right' : 'left'; c.fillText(fs(st.vmax2), x + (x > W - 50 ? -6 : 6), y - 4); }
+  c.textAlign = 'left'; c.font = '10px system-ui';
+  // curseur
+  if (cursorIdx >= 0) {
+    const x = X(T[cursorIdx]);
+    c.strokeStyle = '#fff'; c.beginPath(); c.moveTo(x, pad.t); c.lineTo(x, pad.t + h); c.stroke();
+    c.fillStyle = '#fff'; c.beginPath(); c.arc(x, Y(V[cursorIdx]), 4, 0, 7); c.fill();
+    $('scrub').textContent = `${ft(T[cursorIdx])} · ${fs(V[cursorIdx])} ${uLabel()}`;
+    if (det.map) {
+      const p = det.st.pts[cursorIdx];
+      if (!det.cursor) { det.cursor = L.circleMarker([p[1], p[2]], { radius: 8, color: '#fff', weight: 3, fillColor: '#06141f', fillOpacity: 1 }).addTo(det.map); det.layers.push(det.cursor); }
+      else det.cursor.setLatLng([p[1], p[2]]);
+    }
+  } else $('scrub').textContent = 'Glisse le doigt sur la courbe pour voir ta position sur la carte';
 }
+function chartScrub(ev) {
+  if (!chartGeom || !det.st) return;
+  const r = $('chart').getBoundingClientRect(), x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left;
+  const t = Math.max(0, Math.min(1, (x - chartGeom.pad.l) / chartGeom.w)) * chartGeom.tmax;
+  const T = det.st.T; let lo = 0, hi = T.length - 1;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (T[mid] < t) lo = mid + 1; else hi = mid; }
+  drawChart(lo);
+}
+$('chart').addEventListener('pointerdown', e => { $('chart').setPointerCapture(e.pointerId); chartScrub(e); });
+$('chart').addEventListener('pointermove', e => { if (e.buttons || e.pointerType === 'touch') chartScrub(e); });
+function drawHist() {
+  const st = det.st; const { c, W, H } = prep('hist');
+  const T = st.T, V = st.V; if (!T || T.length < 3) return;
+  const bins = [];
+  for (let i = 1; i < T.length; i++) { const dt = T[i] - T[i - 1]; if (dt > 30) continue; const b = Math.floor(spd(V[i]) / 5); bins[b] = (bins[b] || 0) + dt; }
+  const nb = bins.length, total = bins.reduce((a, b) => a + (b || 0), 0) || 1, mx = Math.max(...bins.map(b => b || 0));
+  const pad = { l: 8, r: 8, t: 16, b: 20 }, w = W - pad.l - pad.r, h = H - pad.t - pad.b, bw = w / nb;
+  for (let b = 0; b < nb; b++) {
+    const val = bins[b] || 0, bh = val / mx * h, x = pad.l + b * bw;
+    c.fillStyle = (b * 5) >= spd(cfg.foil / 3.6) ? '#22d3c5' : '#3b5a6e';
+    c.fillRect(x + 2, pad.t + h - bh, bw - 4, bh);
+    c.fillStyle = '#86a6b8'; c.textAlign = 'center';
+    c.fillText(b * 5, x + bw / 2, H - 6);
+    if (val / total >= 0.03) { c.fillStyle = '#e8f3f8'; c.fillText(Math.round(val / total * 100) + '%', x + bw / 2, pad.t + h - bh - 4); }
+  }
+  c.textAlign = 'left';
+}
+function drawRuns() {
+  const st = det.st; const { c, W, H } = prep('runs');
+  const R = st.runList;
+  if (!R.length) { c.fillStyle = '#86a6b8'; c.fillText('Aucun vol de plus de 10 s', 10, H / 2); return; }
+  const pad = { l: 30, r: 8, t: 18, b: 18 }, w = W - pad.l - pad.r, h = H - pad.t - pad.b;
+  const mx = Math.max(...R.map(r => r.dur)), bw = w / R.length, vtop = Math.max(...R.map(r => r.vmax));
+  c.fillStyle = '#86a6b8';
+  [0, mx / 2, mx].forEach(v => { const y = pad.t + h - v / mx * h; c.fillText(ft(v), 2, y + 3); c.strokeStyle = '#183a50'; c.beginPath(); c.moveTo(pad.l, y); c.lineTo(W - pad.r, y); c.stroke(); });
+  R.forEach((r, k) => {
+    const x = pad.l + k * bw, bh = r.dur / mx * h;
+    c.fillStyle = speedColor(r.avg, Math.max(vtop, 20 / 3.6));
+    c.fillRect(x + Math.min(3, bw * .15), pad.t + h - bh, Math.max(2, bw - Math.min(6, bw * .3)), bh);
+    if (bw > 22) { c.fillStyle = '#e8f3f8'; c.textAlign = 'center'; c.fillText(fs(r.vmax, 0), x + bw / 2, pad.t + h - bh - 4); }
+    if (bw > 14) { c.fillStyle = '#86a6b8'; c.textAlign = 'center'; c.fillText(k + 1, x + bw / 2, H - 5); }
+  });
+  c.textAlign = 'left';
+}
+function drawPolar() {
+  const st = det.st; const { c, W, H } = prep('polar');
+  if (!st.polar || !st.polar.some(v => v > 0)) { c.fillStyle = '#86a6b8'; c.fillText('Pas assez de données pour la polaire', 10, H / 2); return; }
+  // vent en haut ; angle au vent a : 0° = face au vent, 180° = vent arrière ; bâbord à gauche, tribord à droite (symétrique)
+  const cx = W / 2, cy = H / 2 + 6, R = Math.min(W / 2, H / 2) - 18;
+  const mx = spd(Math.max(...st.polar, 20 / 3.6)), step = mx > 40 ? 10 : 5, top = Math.ceil(mx / step) * step;
+  const P = (a, r, sg) => [cx + sg * Math.sin(a * Math.PI / 180) * r, cy - Math.cos(a * Math.PI / 180) * r];
+  // zone face au vent
+  c.fillStyle = 'rgba(255,93,108,.12)'; c.beginPath(); c.moveTo(cx, cy);
+  c.arc(cx, cy, R, -Math.PI / 2 - Math.PI / 4, -Math.PI / 2 + Math.PI / 4); c.closePath(); c.fill();
+  c.strokeStyle = '#183a50'; c.fillStyle = '#86a6b8';
+  for (let v = step; v <= top; v += step) { const r = v / top * R; c.beginPath(); c.arc(cx, cy, r, 0, 7); c.stroke(); c.fillText(v, cx + 3, cy - r + 11); }
+  for (let a = 0; a < 360; a += 45) { const [x, y] = P(a, R, 1); c.beginPath(); c.moveTo(cx, cy); c.lineTo(x, y); c.stroke(); }
+  c.beginPath(); let first = true;
+  const pts = [];
+  st.polar.forEach((v, b) => { if (v > 0) pts.push([b * 10 + 5, spd(v) / top * R]); });
+  pts.forEach(([a, r]) => { const [x, y] = P(a, r, 1); if (first) { c.moveTo(x, y); first = false; } else c.lineTo(x, y); });
+  pts.slice().reverse().forEach(([a, r]) => { const [x, y] = P(a, r, -1); c.lineTo(x, y); });
+  c.closePath(); c.fillStyle = 'rgba(34,211,197,.22)'; c.fill(); c.strokeStyle = '#22d3c5'; c.lineWidth = 2; c.stroke(); c.lineWidth = 1;
+  c.fillStyle = '#e8f3f8'; c.textAlign = 'center';
+  c.fillText('▼ vent', cx, 10); c.fillText('vent arrière', cx, H - 2);
+  c.textAlign = 'left'; c.fillText('travers', 2, cy - 3); c.textAlign = 'right'; c.fillText('travers', W - 2, cy - 3); c.textAlign = 'left';
+}
+$('bWind').onclick = async () => {
+  const s = det.s; s.windFlip = !s.windFlip; s.sum = summarize(s.pts, s.windFlip); await DB.put(s);
+  det.st = statsFor(s); renderDetail(); toast('Jibes et tacks recalculés');
+};
 $('bBack').onclick = () => show('home');
 $('bDel').onclick = async () => { if (await ask('Supprimer définitivement cette session ?', { ok: 'Supprimer', danger: true })) { await DB.del(det.id); toast('Session supprimée'); show('home'); } };
 $('bRename').onclick = async () => {
