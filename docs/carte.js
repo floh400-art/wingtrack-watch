@@ -28,8 +28,8 @@ function openCarte() {
 function cmBase() {
   (CM.base || []).forEach(l => l.remove());
   const b = WM_BASES[cfg.cmBase || 'light'] || WM_BASES.light;
-  CM.base = [L.tileLayer(b.base, { subdomains: 'abcd', maxZoom: 19, attribution: b.att }).addTo(CM.map), L.tileLayer(b.labels, { subdomains: 'abcd', maxZoom: 19, pane: 'cmLabels' }).addTo(CM.map)];
-  $('cmBaseBtn').textContent = { dark: '🌑', light: '🗺️', sat: '🛰️' }[cfg.cmBase || 'light'];
+  CM.base = baseLayers(b, 'cmLabels', CM.map);
+  $('cmBaseBtn').textContent = { dark: '🌑', light: '🗺️', street: '🏘️', sat: '🛰️' }[cfg.cmBase || 'light'];
 }
 function cmDraw() {
   if (!CM.map || !CM.layer) return;
@@ -50,7 +50,7 @@ function cmTap(s) {
     ${verdict ? `<br>${verdict}` : ''}${side ? `<br>${sideBadge(c.d, sh)}${side === 'off' ? '<br><small style="color:#ef4444">Vent de terre : dangereux en cas de casse</small>' : ''}` : ''}
     <br><small>${dayLabel(cmTime().slice(0, 10))} · ${cmTime().slice(11, 16)}</small>
     <br><button class="btn small pri" id="cmGo">Prévisions</button> ${isFav(s) ? '' : '<button class="btn small" id="cmAdd">☆ Ajouter</button>'}</div>`;
-  L.popup({ maxWidth: 260 }).setLatLng([s.lat, s.lon]).setContent(html).openOn(CM.map);
+  L.popup({ maxWidth: 260, autoPanPadding: [20, 140] }).setLatLng([s.lat, s.lon]).setContent(html).openOn(CM.map);
   setTimeout(() => {
     const go = document.getElementById('cmGo'), add = document.getElementById('cmAdd');
     if (go) go.onclick = () => { CM.map.closePopup(); show('meteo'); setSpot({ name: s.name, lat: s.lat, lon: s.lon }); };
@@ -69,7 +69,7 @@ $('cmPlay').onclick = () => {
   CM.playing = setInterval(() => { CM.h = (CM.h + 1) % 168; cmPaintTime(); cmDraw(); CM.paintLocal && CM.paintLocal(); }, 800);
 };
 $('cmOnly').onclick = () => { CM.onlyOk = !CM.onlyOk; cfg.cmOnlyOk = CM.onlyOk; saveCfg(); $('cmOnly').classList.toggle('on', CM.onlyOk); cmDraw(); };
-$('cmBaseBtn').onclick = () => { const o = ['light', 'dark', 'sat']; cfg.cmBase = o[(o.indexOf(cfg.cmBase || 'light') + 1) % 3]; saveCfg(); cmBase(); };
+$('cmBaseBtn').onclick = () => { const o = ['light', 'street', 'sat', 'dark']; cfg.cmBase = o[(o.indexOf(cfg.cmBase || 'light') + 1) % o.length]; saveCfg(); cmBase(); toast('Fond : ' + WM_BASES[cfg.cmBase].l); };
 $('cmHere').onclick = () => hereThen((la, lo) => CM.map && CM.map.setView([la, lo], 10));
 $('cmSearch').onclick = () => { show('meteo'); setTimeout(() => $('mxQ').focus(), 100); };
 function cmStop() { if (CM.playing) { clearInterval(CM.playing); CM.playing = null; $('cmPlay').textContent = '▶'; } }

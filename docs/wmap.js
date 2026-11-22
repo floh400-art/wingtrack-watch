@@ -20,18 +20,23 @@ const WM_MODELS = [
 ];
 const WM_LAYERS = { wind: 'Vent', gust: 'Rafales', wave: 'Vagues', swell: 'Houle' };
 const WM_BASES = {
-  dark: { l: 'Sombre', d: 'comme PredictWind', base: 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', labels: 'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', att: '© OpenStreetMap © CARTO' },
-  light: { l: 'Clair', d: 'plan détaillé', base: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', labels: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', att: '© OpenStreetMap © CARTO' },
+  dark: { l: 'Sombre', d: 'comme PredictWind', base: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', labels: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', att: '© Esri', nz: 16 },
+  light: { l: 'Clair', d: 'plan gris clair', base: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', labels: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}', att: '© Esri', nz: 16 },
+  street: { l: 'Plan', d: 'rues et lieux', base: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', labels: null, att: '© Esri' },
   sat: { l: 'Satellite', d: 'photo', base: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', labels: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', att: '© Esri' },
 };
+// fond + noms par-dessus les couleurs (si le fond a une couche de noms séparée)
+function baseLayers(b, pane, map) {
+  const o = { maxZoom: 19, maxNativeZoom: b.nz || 19 };
+  const ls = [L.tileLayer(b.base, { ...o, attribution: b.att }).addTo(map)];
+  if (b.labels) ls.push(L.tileLayer(b.labels, { ...o, pane }).addTo(map));
+  return ls;
+}
 function setWmBase() {
   if (!WM.map) return;
   (WM.baseLayers || []).forEach(l => l.remove());
   const b = WM_BASES[cfg.wmBase || 'dark'] || WM_BASES.dark;
-  WM.baseLayers = [
-    L.tileLayer(b.base, { subdomains: 'abcd', maxZoom: 19, attribution: b.att, detectRetina: false }).addTo(WM.map),
-    L.tileLayer(b.labels, { subdomains: 'abcd', maxZoom: 19, pane: 'wmLabels' }).addTo(WM.map),
-  ];
+  WM.baseLayers = baseLayers(b, 'wmLabels', WM.map);
 }
 
 /* ---------- palettes ---------- */
@@ -95,7 +100,7 @@ function renderWmPanel() {
     <h3>Finesse de la grille</h3>
     <div class="wmp-grid three">${Object.entries(WM_RES).map(([k, r]) => btn(WM.res === k, `data-r="${k}"`, `${r.l}<small>${r.d}</small>`)).join('')}</div>
     <h3>Fond de carte</h3>
-    <div class="wmp-grid three">${Object.entries(WM_BASES).map(([k, b]) => btn((cfg.wmBase || 'dark') === k, `data-b="${k}"`, `${b.l}<small>${b.d}</small>`)).join('')}</div>
+    <div class="wmp-grid four">${Object.entries(WM_BASES).map(([k, b]) => btn((cfg.wmBase || 'dark') === k, `data-b="${k}"`, `${b.l}<small>${b.d}</small>`)).join('')}</div>
     <h3>Affichage</h3>
     ${tog('wmIso', WM.iso, 'Isobares + centres H / L' + (isWave() ? ' <small>(couches vent)</small>' : ''))}
     ${tog('wmAnimT', WM.anim2, 'Traînées animées')}

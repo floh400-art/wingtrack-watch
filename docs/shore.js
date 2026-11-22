@@ -107,9 +107,36 @@ async function ensureShore(s) {
 }
 // tous les spots visibles d'une carte, en une requête (trait de côte de la zone)
 const SH_AREAS = new Set();
+// Index spatial du trait de côte : segments rangés par cases de 0,05° (~5 km)
+// → chaque spot ne regarde que les côtes proches (sinon calcul énorme qui fige le téléphone)
+const CELL = 0.05;
+function buildCoastIndex(els) {
+  const cells = new Map(), waters = [];
+  const add = (k, seg) => { let a = cells.get(k); if (!a) cells.set(k, a = []); a.push(seg); };
+  els.forEach(e => {
+    if (!e.tags || !e.geometry) return;
+    if (e.tags.natural === 'coastline') {
+      const g = e.geometry;
+      for (let i = 0; i + 1 < g.length; i++) {
+        const seg = [g[i], g[i + 1]];
+        const k1 = Math.floor(g[i].lat / CELL) + ',' + Math.floor(g[i].lon / CELL), k2 = Math.floor(g[i + 1].lat / CELL) + ',' + Math.floor(g[i + 1].lon / CELL);
+        add(k1, seg); if (k2 !== k1) add(k2, seg);
+      }
+    } else if (e.tags.natural === 'water') waters.push(e);
+  });
+  return { cells, waters };
+}
+function shoreFromIndex(s, idx) {
+  const r0 = Math.floor(s.lat / CELL), c0 = Math.floor(s.lon / CELL), segs = [];
+  for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) { const a = idx.cells.get((r0 + dr) + ',' + (c0 + dc)); if (a) segs.push(...a); }
+  const els = segs.map(g => ({ tags: { natural: 'coastline' }, geometry: g }));
+  idx.waters.forEach(w => { const p = w.geometry[0]; if (p && Math.abs(p.lat - s.lat) < 0.1 && Math.abs(p.lon - s.lon) < 0.15) els.push(w); });
+  return shoreFromElements(s, els);
+}
+const tick = () => new Promise(r => setTimeout(r, 0));
 async function ensureShoreArea(map, spots) {
-  if (!map || map.getZoom() < 9 || !navigator.onLine) return false;
-  const todo = spots.filter(s => SHORE[shKey(s)] == null);
+  if (!map || map.getZoom() < 10 || !navigator.onLine) return false;
+  const todo = spots.filter(s => SHORE[shKey(s)] == null).slice(0, 60);
   if (!todo.length) return false;
   const b = map.getBounds(), key = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map(x => x.toFixed(2)).join(',');
   if (SH_AREAS.has(key)) return false;
@@ -117,7 +144,11 @@ async function ensureShoreArea(map, spots) {
   const S = Math.min(...todo.map(s => s.lat)) - 0.04, N = Math.max(...todo.map(s => s.lat)) + 0.04, W = Math.min(...todo.map(s => s.lon)) - 0.06, E = Math.max(...todo.map(s => s.lon)) + 0.06;
   try {
     const j = await overpass(`[out:json][timeout:40];(way["natural"="coastline"](${S},${W},${N},${E});way["natural"="water"](${S},${W},${N},${E}););out geom;`);
-    todo.forEach(s => { SHORE[shKey(s)] = Math.round(shoreFromElements(s, j.elements || [])); });
+    const idx = buildCoastIndex(j.elements || []);
+    for (let i = 0; i < todo.length; i++) {
+      SHORE[shKey(todo[i])] = Math.round(shoreFromIndex(todo[i], idx));
+      if (i % 10 === 9) await tick(); // laisse respirer l'écran
+    }
     saveShore(); return true;
   } catch (e) {
     // OpenStreetMap indisponible : méthode des vagues pour quelques spots (requêtes limitées)
